@@ -61,7 +61,6 @@ locals {
       --disable servicelb \
       --disable local-storage \
       --node-label "workload=db" \
-      --node-taint "workload=db:NoSchedule" \
       --tls-san "$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)" \
       --write-kubeconfig-mode 644
 
