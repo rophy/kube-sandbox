@@ -63,11 +63,23 @@ else
 fi
 
 if [ -s "$OUTPUT_FILE" ]; then
+    # Fix empty server IP in kubeconfig
+    if grep -q "server: https://:6443" "$OUTPUT_FILE"; then
+        echo "Fixing server IP in kubeconfig..."
+        sed -i "s|server: https://:6443|server: https://${DB_IP}:6443|" "$OUTPUT_FILE"
+    fi
+
+    # Verify kubeconfig has correct server URL
+    SERVER_URL=$(grep "server:" "$OUTPUT_FILE" | awk '{print $2}')
     echo "Kubeconfig saved to: $OUTPUT_FILE"
+    echo "Server URL: $SERVER_URL"
     echo ""
     echo "To use:"
     echo "  export KUBECONFIG=$OUTPUT_FILE"
-    echo "  kubectl get nodes"
+    echo "  kubectl get nodes --insecure-skip-tls-verify"
+    echo ""
+    echo "Note: --insecure-skip-tls-verify is needed because the TLS cert"
+    echo "      doesn't include the public IP address."
 else
     echo "ERROR: Failed to fetch kubeconfig"
     exit 1
