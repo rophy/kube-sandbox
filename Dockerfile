@@ -42,6 +42,14 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://dl.k8s.io/release/$(curl -Ls https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl" -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
+# Install Helm
+ARG HELM_VERSION=3.16.3
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://get.helm.sh/helm-v${HELM_VERSION}-linux-${ARCH}.tar.gz" | tar -xzf - && \
+    mv linux-${ARCH}/helm /usr/local/bin/helm && \
+    rm -rf linux-${ARCH} && \
+    chmod +x /usr/local/bin/helm
+
 # Install Claude and Happy Coder
 RUN npm install -g @anthropic-ai/claude-code@2.0.70 happy-coder
 
