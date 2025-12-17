@@ -1,0 +1,43 @@
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        TZ: ${TZ:-UTC}
+        TERRAFORM_VERSION: "1.9.8"
+    container_name: k3s-perf-test-dev
+    hostname: k3s-dev
+    env_file:
+      - .env
+    volumes:
+      # Mount the project directory
+      - .:/workspace:cached
+      # AWS credentials (read-only)
+      - ${HOME}/.aws:/home/node/.aws:ro
+      - home:/home/node
+    environment:
+      # Dev container marker
+      - DEV_CONTAINER=true
+      # AWS environment variables (if using env vars instead of credentials file)
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - AWS_SESSION_TOKEN
+      - AWS_REGION=${AWS_REGION:-ap-east-2}
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-east-2}
+      # Terraform
+      - TF_PLUGIN_CACHE_DIR=/home/node/.terraform.d/plugin-cache
+      # Kubeconfig
+      - KUBECONFIG=/workspace/kubeconfig.yaml
+      # Happy Coder
+      - HAPPY_SERVER_URL=https://kata-rophy.jsgr.xyz:8443
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    # Run as node user
+    user: node
+    # Use tini as init (already set in Dockerfile, but explicit here too)
+    init: true
+
+volumes:
+    home:

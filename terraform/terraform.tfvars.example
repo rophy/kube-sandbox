@@ -1,0 +1,22 @@
+# Example Terraform variables file
+# Copy to terraform.tfvars and customize as needed
+
+aws_region = "us-east-1"
+
+# Leave empty to auto-select first available AZ
+availability_zone = ""
+
+# Instance types
+db_instance_type     = "r6a.large"
+stream_instance_type = "c6a.large"
+client_instance_type = "c6a.large"
+
+# Use spot instances for cost savings (recommended for ephemeral tests)
+use_spot_instances = true
+
+# Optional: SSH public key for direct SSH access
+# If not set, use AWS SSM Session Manager instead
+# ssh_public_key = "ssh-rsa AAAA..."
+
+# CIDR allowed for SSH and K3s API access
+allowed_ssh_cidr = "0.0.0.0/0"
