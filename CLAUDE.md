@@ -88,9 +88,49 @@ export KUBECONFIG=/workspace/kubeconfig.yaml
 ```
 
 ### Destroy Everything
+
+**IMPORTANT: Clean up Kubernetes resources before destroying infrastructure!**
+
+EBS volumes created by the CSI driver are NOT managed by Terraform. You must delete them first:
+
 ```bash
+# Step 1: Delete Helm releases (this deletes PVCs which deletes EBS volumes)
+export KUBECONFIG=/workspace/kubeconfig.yaml
+helm uninstall debezium-cdc
+
+# Step 2: Verify PVCs are deleted
+kubectl get pvc
+
+# Step 3: Now safe to destroy infrastructure
 cd terraform
 terraform destroy
+```
+
+If you forget to clean up, orphaned EBS volumes can be found with:
+```bash
+aws ec2 describe-volumes --filters "Name=tag-key,Values=kubernetes.io/created-for/pvc/name" --query 'Volumes[*].[VolumeId,Size,State]' --output table
+```
+
+And deleted manually:
+```bash
+aws ec2 delete-volume --volume-id vol-xxxxxxxxx
+```
+
+## EBS CSI Driver
+
+The cluster uses AWS EBS CSI driver for dynamic volume provisioning. This allows PVCs to automatically create EBS volumes.
+
+**The EBS CSI driver is automatically deployed** when the K3s cluster starts (via manifests in `/var/lib/rancher/k3s/server/manifests/`).
+
+### Storage Classes (auto-created)
+- `ebs-gp3` (default) - Standard gp3 volumes
+- `ebs-gp3-fast` - gp3 with 4000 IOPS, 250 MB/s throughput
+
+### Manual Installation (if needed)
+```bash
+export KUBECONFIG=/workspace/kubeconfig.yaml
+kubectl apply -f /workspace/manifests/ebs-csi-driver.yaml
+kubectl apply -f /workspace/manifests/ebs-storageclass.yaml
 ```
 
 ## Important Notes
@@ -98,3 +138,4 @@ terraform destroy
 - All AWS operations require valid credentials (mounted from `~/.aws` or via environment variables)
 - Spot instances are used by default for cost savings
 - The cluster is ephemeral - destroy when done to avoid charges
+- EBS volumes created by CSI driver must be cleaned up before `terraform destroy`

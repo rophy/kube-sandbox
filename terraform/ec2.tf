@@ -37,6 +37,38 @@ resource "aws_iam_role_policy_attachment" "ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# EBS CSI Driver policy for dynamic volume provisioning
+resource "aws_iam_role_policy" "ebs_csi" {
+  name = "k3s-ebs-csi-policy"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ec2:CreateSnapshot",
+          "ec2:AttachVolume",
+          "ec2:DetachVolume",
+          "ec2:ModifyVolume",
+          "ec2:DescribeAvailabilityZones",
+          "ec2:DescribeInstances",
+          "ec2:DescribeSnapshots",
+          "ec2:DescribeTags",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeVolumesModifications",
+          "ec2:CreateVolume",
+          "ec2:DeleteVolume",
+          "ec2:DeleteSnapshot",
+          "ec2:CreateTags"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2" {
   name = "k3s-perf-test-ec2-profile"
   role = aws_iam_role.ec2.name
@@ -54,6 +86,31 @@ locals {
     # Disable firewalld (K3s manages iptables)
     systemctl disable --now firewalld || true
 
+    # Wait for public IP to be assigned (important for TLS SAN)
+    echo "Waiting for public IP..."
+    PUBLIC_IP=""
+    for i in {1..30}; do
+      PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)
+      if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "" ]; then
+        echo "Got public IP: $PUBLIC_IP"
+        break
+      fi
+      sleep 2
+    done
+
+    # Create K3s manifests directory for auto-deploy
+    mkdir -p /var/lib/rancher/k3s/server/manifests
+
+    # Write EBS CSI Driver manifest
+    cat > /var/lib/rancher/k3s/server/manifests/ebs-csi-driver.yaml << 'EBSCSI'
+${file("${path.module}/../manifests/ebs-csi-driver.yaml")}
+EBSCSI
+
+    # Write EBS StorageClass manifest
+    cat > /var/lib/rancher/k3s/server/manifests/ebs-storageclass.yaml << 'EBSSC'
+${file("${path.module}/../manifests/ebs-storageclass.yaml")}
+EBSSC
+
     # Install K3s server with disabled components
     curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -s - \
       --token "${random_password.k3s_token.result}" \
@@ -61,7 +118,7 @@ locals {
       --disable servicelb \
       --disable local-storage \
       --node-label "workload=db" \
-      --tls-san "$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)" \
+      --tls-san "$PUBLIC_IP" \
       --write-kubeconfig-mode 644
 
     # Wait for K3s to be ready

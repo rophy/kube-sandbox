@@ -69,17 +69,39 @@ if [ -s "$OUTPUT_FILE" ]; then
         sed -i "s|server: https://:6443|server: https://${DB_IP}:6443|" "$OUTPUT_FILE"
     fi
 
+    # Extract and install K3s CA certificate
+    echo "Extracting K3s CA certificate..."
+    CA_CERT_FILE="/usr/local/share/ca-certificates/k3s-ca.crt"
+
+    # Extract certificate-authority-data from kubeconfig and decode
+    CA_DATA=$(grep "certificate-authority-data:" "$OUTPUT_FILE" | awk '{print $2}')
+    if [ -n "$CA_DATA" ]; then
+        echo "$CA_DATA" | base64 -d > "$CA_CERT_FILE" 2>/dev/null || \
+        echo "$CA_DATA" | base64 --decode > "$CA_CERT_FILE"
+
+        # Update system CA certificates
+        if command -v update-ca-certificates &> /dev/null; then
+            update-ca-certificates 2>/dev/null && echo "CA certificate installed to system trust store"
+        elif command -v update-ca-trust &> /dev/null; then
+            cp "$CA_CERT_FILE" /etc/pki/ca-trust/source/anchors/
+            update-ca-trust extract && echo "CA certificate installed to system trust store"
+        else
+            echo "Warning: Could not update system CA certificates automatically"
+            echo "CA cert saved to: $CA_CERT_FILE"
+        fi
+    else
+        echo "Warning: Could not extract CA certificate from kubeconfig"
+    fi
+
     # Verify kubeconfig has correct server URL
     SERVER_URL=$(grep "server:" "$OUTPUT_FILE" | awk '{print $2}')
+    echo ""
     echo "Kubeconfig saved to: $OUTPUT_FILE"
     echo "Server URL: $SERVER_URL"
     echo ""
     echo "To use:"
     echo "  export KUBECONFIG=$OUTPUT_FILE"
-    echo "  kubectl get nodes --insecure-skip-tls-verify"
-    echo ""
-    echo "Note: --insecure-skip-tls-verify is needed because the TLS cert"
-    echo "      doesn't include the public IP address."
+    echo "  kubectl get nodes"
 else
     echo "ERROR: Failed to fetch kubeconfig"
     exit 1
