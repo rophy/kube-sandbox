@@ -60,7 +60,8 @@ RUN mkdir -p /usr/local/share/npm-global && \
 ARG USERNAME=node
 
 # Set environment variables
-ENV DEVCONTAINER=true
+ENV DEV_CONTAINER=true
+ENV KUBECONFIG=/workspace/kubeconfig.yaml
 
 # Create workspace and config directories and set permissions
 RUN mkdir -p /workspace /home/node/.claude /home/node/.aws /home/node/.kube /home/node/.terraform.d/plugin-cache && \
@@ -77,6 +78,9 @@ RUN ARCH=$(dpkg --print-architecture) && \
 
 # Set up non-root user
 USER node
+
+# Add KUBECONFIG to bashrc for interactive shells
+RUN echo 'export KUBECONFIG=/workspace/kubeconfig.yaml' >> /home/node/.bashrc
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global

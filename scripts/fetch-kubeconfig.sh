@@ -63,6 +63,9 @@ else
 fi
 
 if [ -s "$OUTPUT_FILE" ]; then
+    # Fix file permissions to avoid kubectl warnings
+    chmod 600 "$OUTPUT_FILE"
+
     # Fix empty server IP in kubeconfig
     if grep -q "server: https://:6443" "$OUTPUT_FILE"; then
         echo "Fixing server IP in kubeconfig..."
