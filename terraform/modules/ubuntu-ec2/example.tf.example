@@ -1,0 +1,29 @@
+# Example usage of the ubuntu-ec2 module
+# Copy this to your root terraform directory and customize
+
+module "ubuntu_server" {
+  source = "./modules/ubuntu-ec2"
+
+  name               = "my-ubuntu-server"
+  instance_type      = "t3.medium"
+  subnet_id          = aws_subnet.public.id
+  security_group_ids = [aws_security_group.k3s.id]
+  key_name           = aws_key_pair.main[0].key_name  # or null if no SSH key
+  use_spot           = true
+  root_volume_size   = 30
+
+  # Optional: run a startup script
+  user_data = <<-EOF
+    #!/bin/bash
+    apt-get update
+    apt-get install -y docker.io
+  EOF
+
+  tags = {
+    Environment = "dev"
+  }
+}
+
+output "ubuntu_public_ip" {
+  value = module.ubuntu_server.public_ip
+}

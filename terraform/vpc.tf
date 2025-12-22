@@ -14,7 +14,7 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "k3s-perf-test-vpc"
+    Name = "ubuntu-ec2-vpc"
   }
 }
 
@@ -23,11 +23,11 @@ resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
 
   tags = {
-    Name = "k3s-perf-test-igw"
+    Name = "ubuntu-ec2-igw"
   }
 }
 
-# Public Subnet (single AZ, no NAT Gateway)
+# Public Subnet
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.subnet_cidr
@@ -35,7 +35,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "k3s-perf-test-public"
+    Name = "ubuntu-ec2-public"
   }
 }
 
@@ -49,7 +49,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "k3s-perf-test-rt"
+    Name = "ubuntu-ec2-rt"
   }
 }
 

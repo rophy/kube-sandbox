@@ -1,297 +1,47 @@
-# Get latest Amazon Linux 2023 AMI
-data "aws_ami" "al2023" {
-  most_recent = true
-  owners      = ["amazon"]
+# Standalone Ubuntu EC2 Instance
+# No K3s - just a plain Ubuntu server with 64GB RAM
 
-  filter {
-    name   = "name"
-    values = ["al2023-ami-*-x86_64"]
-  }
-
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
-}
-
-# IAM Role for EC2 (needed for SSM and basic operations)
-resource "aws_iam_role" "ec2" {
-  name = "k3s-perf-test-ec2-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
-        Principal = {
-          Service = "ec2.amazonaws.com"
-        }
-      }
-    ]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.ec2.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-# EBS CSI Driver policy for dynamic volume provisioning
-resource "aws_iam_role_policy" "ebs_csi" {
-  name = "k3s-ebs-csi-policy"
-  role = aws_iam_role.ec2.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "ec2:CreateSnapshot",
-          "ec2:AttachVolume",
-          "ec2:DetachVolume",
-          "ec2:ModifyVolume",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeInstances",
-          "ec2:DescribeSnapshots",
-          "ec2:DescribeTags",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeVolumesModifications",
-          "ec2:CreateVolume",
-          "ec2:DeleteVolume",
-          "ec2:DeleteSnapshot",
-          "ec2:CreateTags"
-        ]
-        Resource = "*"
-      }
-    ]
-  })
-}
-
-resource "aws_iam_instance_profile" "ec2" {
-  name = "k3s-perf-test-ec2-profile"
-  role = aws_iam_role.ec2.name
-}
-
-# User data for K3s server (DB node)
 locals {
-  k3s_server_userdata = <<-EOF
+  docker_userdata = <<-EOF
     #!/bin/bash
     set -e
 
-    # Install dependencies (curl-minimal already present on AL2023)
-    dnf install -y jq
+    # Install Docker
+    apt-get update
+    apt-get install -y ca-certificates curl
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
 
-    # Disable firewalld (K3s manages iptables)
-    systemctl disable --now firewalld || true
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-    # Wait for public IP to be assigned (important for TLS SAN)
-    echo "Waiting for public IP..."
-    PUBLIC_IP=""
-    for i in {1..30}; do
-      PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)
-      if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "" ]; then
-        echo "Got public IP: $PUBLIC_IP"
-        break
-      fi
-      sleep 2
-    done
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
-    # Create K3s manifests directory for auto-deploy
-    mkdir -p /var/lib/rancher/k3s/server/manifests
+    # Add ubuntu user to docker group
+    usermod -aG docker ubuntu
 
-    # Write EBS CSI Driver manifest
-    cat > /var/lib/rancher/k3s/server/manifests/ebs-csi-driver.yaml << 'EBSCSI'
-${file("${path.module}/../manifests/ebs-csi-driver.yaml")}
-EBSCSI
+    # Enable and start Docker
+    systemctl enable docker
+    systemctl start docker
 
-    # Write EBS StorageClass manifest
-    cat > /var/lib/rancher/k3s/server/manifests/ebs-storageclass.yaml << 'EBSSC'
-${file("${path.module}/../manifests/ebs-storageclass.yaml")}
-EBSSC
-
-    # Install K3s server with disabled components
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -s - \
-      --token "${random_password.k3s_token.result}" \
-      --disable traefik \
-      --disable servicelb \
-      --disable local-storage \
-      --node-label "workload=db" \
-      --tls-san "$PUBLIC_IP" \
-      --write-kubeconfig-mode 644
-
-    # Wait for K3s to be ready
-    until kubectl get nodes; do sleep 5; done
-
-    # Store kubeconfig with public IP for external access
-    PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-    sed "s/127.0.0.1/$PUBLIC_IP/g" /etc/rancher/k3s/k3s.yaml > /tmp/kubeconfig-external.yaml
-    chmod 644 /tmp/kubeconfig-external.yaml
-
-    echo "K3s server ready"
-  EOF
-
-  k3s_agent_stream_userdata = <<-EOF
-    #!/bin/bash
-    set -e
-
-    # Install dependencies (curl-minimal already present on AL2023)
-    dnf install -y jq
-
-    # Disable firewalld
-    systemctl disable --now firewalld || true
-
-    # Wait for server to be ready (retry logic)
-    SERVER_IP="${aws_instance.db.private_ip}"
-    until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
-      echo "Waiting for K3s server..."
-      sleep 10
-    done
-
-    # Install K3s agent
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
-      --server "https://$SERVER_IP:6443" \
-      --token "${random_password.k3s_token.result}" \
-      --node-label "workload=stream" \
-      --node-taint "workload=stream:NoSchedule"
-
-    echo "K3s agent (stream) ready"
-  EOF
-
-  k3s_agent_client_userdata = <<-EOF
-    #!/bin/bash
-    set -e
-
-    # Install dependencies (curl-minimal already present on AL2023)
-    dnf install -y jq
-
-    # Disable firewalld
-    systemctl disable --now firewalld || true
-
-    # Wait for server to be ready (retry logic)
-    SERVER_IP="${aws_instance.db.private_ip}"
-    until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
-      echo "Waiting for K3s server..."
-      sleep 10
-    done
-
-    # Install K3s agent
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
-      --server "https://$SERVER_IP:6443" \
-      --token "${random_password.k3s_token.result}" \
-      --node-label "workload=client" \
-      --node-taint "workload=client:NoSchedule"
-
-    echo "K3s agent (client) ready"
+    echo "Docker installed successfully"
   EOF
 }
 
-# DB Node - K3s Server (On-Demand or Spot)
-resource "aws_instance" "db" {
-  ami                    = data.aws_ami.al2023.id
-  instance_type          = var.db_instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.k3s.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
-  key_name               = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
+module "ubuntu" {
+  source = "./modules/ubuntu-ec2"
 
-  user_data = local.k3s_server_userdata
-
-  instance_market_options {
-    market_type = var.use_spot_instances ? "spot" : null
-
-    dynamic "spot_options" {
-      for_each = var.use_spot_instances ? [1] : []
-      content {
-        instance_interruption_behavior = "terminate"
-        spot_instance_type             = "one-time"
-      }
-    }
-  }
-
-  root_block_device {
-    volume_size = 50
-    volume_type = "gp3"
-  }
+  name               = var.instance_name
+  instance_type      = var.instance_type
+  subnet_id          = aws_subnet.public.id
+  security_group_ids = [aws_security_group.main.id]
+  key_name           = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
+  use_spot           = var.use_spot
+  root_volume_size   = var.root_volume_size
+  user_data          = local.docker_userdata
 
   tags = {
-    Name     = "k3s-db"
-    Workload = "db"
-    Role     = "server"
-  }
-}
-
-# Stream Node - K3s Agent
-resource "aws_instance" "stream" {
-  ami                    = data.aws_ami.al2023.id
-  instance_type          = var.stream_instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.k3s.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
-  key_name               = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
-
-  user_data = local.k3s_agent_stream_userdata
-
-  instance_market_options {
-    market_type = var.use_spot_instances ? "spot" : null
-
-    dynamic "spot_options" {
-      for_each = var.use_spot_instances ? [1] : []
-      content {
-        instance_interruption_behavior = "terminate"
-        spot_instance_type             = "one-time"
-      }
-    }
-  }
-
-  root_block_device {
-    volume_size = 30
-    volume_type = "gp3"
-  }
-
-  depends_on = [aws_instance.db]
-
-  tags = {
-    Name     = "k3s-stream"
-    Workload = "stream"
-    Role     = "agent"
-  }
-}
-
-# Client Node - K3s Agent
-resource "aws_instance" "client" {
-  ami                    = data.aws_ami.al2023.id
-  instance_type          = var.client_instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.k3s.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
-  key_name               = var.ssh_public_key != "" ? aws_key_pair.main[0].key_name : null
-
-  user_data = local.k3s_agent_client_userdata
-
-  instance_market_options {
-    market_type = var.use_spot_instances ? "spot" : null
-
-    dynamic "spot_options" {
-      for_each = var.use_spot_instances ? [1] : []
-      content {
-        instance_interruption_behavior = "terminate"
-        spot_instance_type             = "one-time"
-      }
-    }
-  }
-
-  root_block_device {
-    volume_size = 30
-    volume_type = "gp3"
-  }
-
-  depends_on = [aws_instance.db]
-
-  tags = {
-    Name     = "k3s-client"
-    Workload = "client"
-    Role     = "agent"
+    Project = "ubuntu-ec2"
   }
 }

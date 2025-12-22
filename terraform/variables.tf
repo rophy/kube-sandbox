@@ -22,28 +22,28 @@ variable "subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-variable "db_instance_type" {
-  description = "Instance type for node 1 (K3s server)"
+variable "instance_name" {
+  description = "Name for the EC2 instance"
   type        = string
-  default     = "r6i.large"
+  default     = "ubuntu-server"
 }
 
-variable "stream_instance_type" {
-  description = "Instance type for node 2 (K3s agent)"
+variable "instance_type" {
+  description = "EC2 instance type"
   type        = string
-  default     = "c6i.large"
+  default     = "r7i.2xlarge"
 }
 
-variable "client_instance_type" {
-  description = "Instance type for node 3 (K3s agent)"
-  type        = string
-  default     = "c6i.large"
-}
-
-variable "use_spot_instances" {
+variable "use_spot" {
   description = "Use spot instances for cost savings"
   type        = bool
-  default     = true
+  default     = false
+}
+
+variable "root_volume_size" {
+  description = "Root volume size in GB"
+  type        = number
+  default     = 200
 }
 
 variable "ssh_public_key" {

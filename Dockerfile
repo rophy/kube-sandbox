@@ -50,6 +50,14 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm -rf linux-${ARCH} && \
     chmod +x /usr/local/bin/helm
 
+# Install Docker CLI (for remote docker context)
+ARG DOCKER_VERSION=27.4.1
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then DOCKERARCH="x86_64"; else DOCKERARCH="aarch64"; fi && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKERARCH}/docker-${DOCKER_VERSION}.tgz" | \
+    tar xz --strip-components=1 -C /usr/local/bin docker/docker && \
+    chmod +x /usr/local/bin/docker
+
 # Install Claude and Happy Coder
 RUN npm install -g @anthropic-ai/claude-code@2.0.70 happy-coder
 
