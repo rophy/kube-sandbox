@@ -56,18 +56,67 @@ If more than one Claude process is running, display this warning and STOP:
 
 ## About This Environment
 
-This is a disposable K3s cluster on AWS with minimal cost. The dev container provides all necessary tools:
+This project has two branches for different use cases:
+
+### Branch: `main` - K3s Cluster
+Disposable 3-node K3s cluster on AWS for Kubernetes workloads.
+
+### Branch: `ec2` - Standalone Ubuntu EC2
+Single Ubuntu EC2 instance (r7i.2xlarge, 64GB RAM) with Docker for running docker-compose workloads remotely.
+
+The dev container provides all necessary tools:
 
 - **Terraform** - Infrastructure provisioning
 - **AWS CLI** - AWS operations
-- **kubectl** - Kubernetes management
+- **kubectl** - Kubernetes management (main branch)
+- **Docker CLI** - Remote docker context (ec2 branch)
 
 ## Project Structure
 
-- `terraform/` - Infrastructure as Code for AWS EC2 + K3s
-- `scripts/` - Helper scripts (fetch-kubeconfig.sh)
+- `terraform/` - Infrastructure as Code
+- `terraform/modules/ubuntu-ec2/` - Reusable Ubuntu EC2 module (ec2 branch)
+- `scripts/` - Helper scripts
 
-## Common Tasks
+## Branch: ec2 - Standalone Ubuntu EC2
+
+### Deploy Infrastructure + Setup Docker Context
+```bash
+./scripts/deploy-compose.sh
+```
+
+This script:
+1. Runs `terraform apply -auto-approve`
+2. Waits for SSH and Docker to be ready
+3. Sets up docker context so local docker commands run on remote EC2
+
+### After Deploy - Use Docker Remotely
+```bash
+docker ps                                    # List containers on EC2
+docker compose -f docker-compose.yaml up -d  # Deploy compose file to EC2
+docker compose -f docker-compose.yaml logs   # View logs
+docker compose -f docker-compose.yaml down   # Stop containers
+```
+
+### Switch Back to Local Docker
+```bash
+docker context use default
+```
+
+### Destroy Infrastructure
+```bash
+cd terraform
+terraform destroy
+```
+
+### Configuration (terraform/terraform.tfvars)
+```hcl
+ssh_public_key   = "ssh-ed25519 AAAA..."  # Required for SSH access
+instance_type    = "r7i.2xlarge"          # 8 vCPU, 64GB RAM (default)
+root_volume_size = 200                     # GB (default)
+use_spot         = false                   # On-demand by default
+```
+
+## Branch: main - K3s Cluster
 
 ### Create Infrastructure
 ```bash
@@ -116,17 +165,17 @@ And deleted manually:
 aws ec2 delete-volume --volume-id vol-xxxxxxxxx
 ```
 
-## EBS CSI Driver
+### EBS CSI Driver
 
 The cluster uses AWS EBS CSI driver for dynamic volume provisioning. This allows PVCs to automatically create EBS volumes.
 
 **The EBS CSI driver is automatically deployed** when the K3s cluster starts (via manifests in `/var/lib/rancher/k3s/server/manifests/`).
 
-### Storage Classes (auto-created)
+#### Storage Classes (auto-created)
 - `ebs-gp3` (default) - Standard gp3 volumes
 - `ebs-gp3-fast` - gp3 with 4000 IOPS, 250 MB/s throughput
 
-### Manual Installation (if needed)
+#### Manual Installation (if needed)
 ```bash
 export KUBECONFIG=/workspace/kubeconfig.yaml
 kubectl apply -f /workspace/manifests/ebs-csi-driver.yaml
@@ -136,6 +185,6 @@ kubectl apply -f /workspace/manifests/ebs-storageclass.yaml
 ## Important Notes
 
 - All AWS operations require valid credentials (mounted from `~/.aws` or via environment variables)
-- Spot instances are used by default for cost savings
-- The cluster is ephemeral - destroy when done to avoid charges
-- EBS volumes created by CSI driver must be cleaned up before `terraform destroy`
+- Region: `ap-east-2` (Taipei, Taiwan)
+- The infrastructure is ephemeral - destroy when done to avoid charges
+- K3s branch uses spot instances by default; EC2 branch uses on-demand
