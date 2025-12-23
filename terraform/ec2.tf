@@ -77,114 +77,123 @@ resource "aws_iam_instance_profile" "ec2" {
 # User data for K3s server (DB node)
 locals {
   k3s_server_userdata = <<-EOF
-    #!/bin/bash
-    set -e
+#!/bin/bash
+set -e
 
-    # Install dependencies (curl-minimal already present on AL2023)
-    dnf install -y jq
+# Install dependencies (curl-minimal already present on AL2023)
+dnf install -y jq
 
-    # Disable firewalld (K3s manages iptables)
-    systemctl disable --now firewalld || true
+# Disable firewalld (K3s manages iptables)
+systemctl disable --now firewalld || true
 
-    # Wait for public IP to be assigned (important for TLS SAN)
-    echo "Waiting for public IP..."
-    PUBLIC_IP=""
-    for i in {1..30}; do
-      PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4 || true)
-      if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "" ]; then
-        echo "Got public IP: $PUBLIC_IP"
-        break
-      fi
-      sleep 2
-    done
+# Wait for public IP to be assigned (important for TLS SAN)
+echo "Waiting for public IP..."
+PUBLIC_IP=""
+for i in {1..60}; do
+  # Use IMDSv2 with token
+  TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" || true)
+  if [ -n "$TOKEN" ]; then
+    PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4 || true)
+  fi
+  if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "404" ] && [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Got public IP: $PUBLIC_IP"
+    break
+  fi
+  echo "Waiting for public IP... attempt $i"
+  sleep 2
+done
 
-    # Create K3s manifests directory for auto-deploy
-    mkdir -p /var/lib/rancher/k3s/server/manifests
+if [ -z "$PUBLIC_IP" ] || ! [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "ERROR: Failed to get public IP after 60 attempts"
+  exit 1
+fi
 
-    # Write EBS CSI Driver manifest
-    cat > /var/lib/rancher/k3s/server/manifests/ebs-csi-driver.yaml << 'EBSCSI'
+# Create K3s manifests directory for auto-deploy
+mkdir -p /var/lib/rancher/k3s/server/manifests
+
+# Write EBS CSI Driver manifest
+cat > /var/lib/rancher/k3s/server/manifests/ebs-csi-driver.yaml << 'EBSCSI'
 ${file("${path.module}/../manifests/ebs-csi-driver.yaml")}
 EBSCSI
 
-    # Write EBS StorageClass manifest
-    cat > /var/lib/rancher/k3s/server/manifests/ebs-storageclass.yaml << 'EBSSC'
+# Write EBS StorageClass manifest
+cat > /var/lib/rancher/k3s/server/manifests/ebs-storageclass.yaml << 'EBSSC'
 ${file("${path.module}/../manifests/ebs-storageclass.yaml")}
 EBSSC
 
-    # Install K3s server with disabled components
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -s - \
-      --token "${random_password.k3s_token.result}" \
-      --disable traefik \
-      --disable servicelb \
-      --disable local-storage \
-      --node-label "workload=db" \
-      --tls-san "$PUBLIC_IP" \
-      --write-kubeconfig-mode 644
+# Install K3s server with disabled components
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -s - \
+  --token "${random_password.k3s_token.result}" \
+  --disable traefik \
+  --disable servicelb \
+  --disable local-storage \
+  --node-label "workload=db" \
+  --tls-san "$PUBLIC_IP" \
+  --write-kubeconfig-mode 644
 
-    # Wait for K3s to be ready
-    until kubectl get nodes; do sleep 5; done
+# Wait for K3s to be ready
+until kubectl get nodes; do sleep 5; done
 
-    # Store kubeconfig with public IP for external access
-    PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-    sed "s/127.0.0.1/$PUBLIC_IP/g" /etc/rancher/k3s/k3s.yaml > /tmp/kubeconfig-external.yaml
-    chmod 644 /tmp/kubeconfig-external.yaml
+# Store kubeconfig with public IP for external access (PUBLIC_IP already set above)
+sed "s/127.0.0.1/$PUBLIC_IP/g" /etc/rancher/k3s/k3s.yaml > /tmp/kubeconfig-external.yaml
+chmod 644 /tmp/kubeconfig-external.yaml
 
-    echo "K3s server ready"
-  EOF
+echo "K3s server ready"
+EOF
 
   k3s_agent_stream_userdata = <<-EOF
-    #!/bin/bash
-    set -e
+#!/bin/bash
+set -e
 
-    # Install dependencies (curl-minimal already present on AL2023)
-    dnf install -y jq
+# Install dependencies (curl-minimal already present on AL2023)
+dnf install -y jq
 
-    # Disable firewalld
-    systemctl disable --now firewalld || true
+# Disable firewalld
+systemctl disable --now firewalld || true
 
-    # Wait for server to be ready (retry logic)
-    SERVER_IP="${aws_instance.db.private_ip}"
-    until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
-      echo "Waiting for K3s server..."
-      sleep 10
-    done
+# Wait for server to be ready (retry logic)
+SERVER_IP="${aws_instance.db.private_ip}"
+until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
+  echo "Waiting for K3s server..."
+  sleep 10
+done
 
-    # Install K3s agent
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
-      --server "https://$SERVER_IP:6443" \
-      --token "${random_password.k3s_token.result}" \
-      --node-label "workload=stream" \
-      --node-taint "workload=stream:NoSchedule"
+# Install K3s agent
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
+  --server "https://$SERVER_IP:6443" \
+  --token "${random_password.k3s_token.result}" \
+  --node-label "workload=stream" \
+  --node-taint "workload=stream:NoSchedule"
 
-    echo "K3s agent (stream) ready"
-  EOF
+echo "K3s agent (stream) ready"
+EOF
 
   k3s_agent_client_userdata = <<-EOF
-    #!/bin/bash
-    set -e
+#!/bin/bash
+set -e
 
-    # Install dependencies (curl-minimal already present on AL2023)
-    dnf install -y jq
+# Install dependencies (curl-minimal already present on AL2023)
+dnf install -y jq
 
-    # Disable firewalld
-    systemctl disable --now firewalld || true
+# Disable firewalld
+systemctl disable --now firewalld || true
 
-    # Wait for server to be ready (retry logic)
-    SERVER_IP="${aws_instance.db.private_ip}"
-    until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
-      echo "Waiting for K3s server..."
-      sleep 10
-    done
+# Wait for server to be ready (retry logic)
+SERVER_IP="${aws_instance.db.private_ip}"
+until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
+  echo "Waiting for K3s server..."
+  sleep 10
+done
 
-    # Install K3s agent
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
-      --server "https://$SERVER_IP:6443" \
-      --token "${random_password.k3s_token.result}" \
-      --node-label "workload=client" \
-      --node-taint "workload=client:NoSchedule"
+# Install K3s agent
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
+  --server "https://$SERVER_IP:6443" \
+  --token "${random_password.k3s_token.result}" \
+  --node-label "workload=client" \
+  --node-taint "workload=client:NoSchedule"
 
-    echo "K3s agent (client) ready"
-  EOF
+echo "K3s agent (client) ready"
+EOF
 }
 
 # DB Node - K3s Server (On-Demand or Spot)
