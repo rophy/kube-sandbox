@@ -43,7 +43,7 @@ variable "client_instance_type" {
 variable "use_spot_instances" {
   description = "Use spot instances for cost savings"
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "ssh_public_key" {
