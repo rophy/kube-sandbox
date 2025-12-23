@@ -2,9 +2,7 @@
 
 ## Environment Check (MANDATORY - DO THIS FIRST)
 
-**Immediately upon starting, perform these two checks:**
-
-### 1. Check if inside the dev container:
+Check if inside the dev container:
 
 ```bash
 echo $DEV_CONTAINER
@@ -27,32 +25,6 @@ If `DEV_CONTAINER` is not `true`, display this warning and STOP:
 ║                                                                              ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 ```
-
-### 2. Check for other Claude processes:
-
-```bash
-ps aux | grep -i claude | grep -v grep
-```
-
-If more than one Claude process is running, display this warning and STOP:
-
-```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║   ⚠️  WARNING: MULTIPLE CLAUDE PROCESSES DETECTED                            ║
-║                                                                              ║
-║   Running multiple Claude processes simultaneously can cause conflicts       ║
-║   with Terraform state and AWS resource management.                          ║
-║                                                                              ║
-║   Please terminate other Claude processes before proceeding:                 ║
-║                                                                              ║
-║       pkill -f claude      # Kill all Claude processes                       ║
-║       claude               # Then restart a single instance                  ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
-
-**Do not proceed with any infrastructure or Kubernetes operations until both checks pass.**
 
 ## About This Environment
 
