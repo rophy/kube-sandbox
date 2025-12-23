@@ -30,7 +30,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm -rf aws awscliv2.zip
 
 # Install Terraform
-ARG TERRAFORM_VERSION=1.9.8
+ARG TERRAFORM_VERSION=1.14.3
 RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip" -o terraform.zip && \
     unzip -q terraform.zip -d /usr/local/bin && \

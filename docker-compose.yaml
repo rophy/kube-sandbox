@@ -3,9 +3,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        TZ: ${TZ:-UTC}
-        TERRAFORM_VERSION: "1.9.8"
     container_name: k3s-perf-test-dev
     hostname: k3s-dev
     env_file:
