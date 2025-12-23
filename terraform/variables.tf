@@ -25,19 +25,19 @@ variable "subnet_cidr" {
 variable "db_instance_type" {
   description = "Instance type for node 1 (K3s server)"
   type        = string
-  default     = "r6i.large"
+  default     = "m6i.2xlarge"
 }
 
 variable "stream_instance_type" {
   description = "Instance type for node 2 (K3s agent)"
   type        = string
-  default     = "c6i.large"
+  default     = "m6i.2xlarge"
 }
 
 variable "client_instance_type" {
   description = "Instance type for node 3 (K3s agent)"
   type        = string
-  default     = "c6i.large"
+  default     = "m6i.2xlarge"
 }
 
 variable "use_spot_instances" {
