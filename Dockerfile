@@ -19,6 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     tini \
+    python \
+    python3-jinja2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install AWS CLI v2
@@ -79,8 +81,11 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Set up non-root user
 USER node
 
-# Add KUBECONFIG to bashrc for interactive shells
-RUN echo 'export KUBECONFIG=/workspace/kubeconfig.yaml' >> /home/node/.bashrc
+# Setup dev container env
+RUN echo 'export KUBECONFIG=/workspace/kubeconfig.yaml' >> /home/node/.bashrc && \
+    echo 'alias claude="claude --dangerously-skip-permissions"' >> /home/node/.bashrc && \
+    echo 'alias happy="happy --dangerously-skip-permissions"' >> /home/node/.bashrc
+#    npm install -g happy-coder
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
