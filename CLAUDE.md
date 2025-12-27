@@ -77,28 +77,30 @@ The cluster uses AWS EBS CSI driver for dynamic volume provisioning. This allows
 
 The cluster includes a local Docker registry for in-cluster image builds and deployments. It is automatically deployed by `make up`.
 
-### Registry Endpoints
+### Registry Endpoint
 
-| Context | Endpoint |
-|---------|----------|
-| From pods (in-cluster) | `registry.registry.svc.cluster.local:5000` |
-| From K3s nodes | `localhost:30500` |
-| From outside (dev container) | `<DB_NODE_IP>:30500` |
+Use the same registry address everywhere: `registry.registry.svc.cluster.local:30500`
 
-### Pushing Images from Dev Container
+### Setup (one-time after `make up`)
+
+Add the DB node IP to `/etc/hosts` in the dev container:
 
 ```bash
-# Get the registry endpoint
+# Get DB node IP and add to /etc/hosts
 DB_IP=$(kubectl get nodes -l workload=db -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+echo "${DB_IP} registry.registry.svc.cluster.local" | sudo tee -a /etc/hosts
+```
 
-# Tag and push
-docker tag myimage:latest ${DB_IP}:30500/myimage:latest
-docker push ${DB_IP}:30500/myimage:latest
+### Pushing Images
+
+```bash
+docker tag myimage:latest registry.registry.svc.cluster.local:30500/myimage:latest
+docker push registry.registry.svc.cluster.local:30500/myimage:latest
 ```
 
 ### Using Images in Kubernetes
 
-Reference images using the in-cluster endpoint:
+Use the same image reference in pod specs:
 
 ```yaml
 apiVersion: v1
@@ -108,13 +110,7 @@ metadata:
 spec:
   containers:
     - name: app
-      image: registry.registry.svc.cluster.local:5000/myimage:latest
-```
-
-Or use `localhost:30500` since all nodes have access via NodePort:
-
-```yaml
-image: localhost:30500/myimage:latest
+      image: registry.registry.svc.cluster.local:30500/myimage:latest
 ```
 
 ### Building Images Inside the Cluster (Kaniko)
@@ -133,7 +129,7 @@ spec:
       args:
         - "--dockerfile=Dockerfile"
         - "--context=git://github.com/user/repo.git"
-        - "--destination=registry.registry.svc.cluster.local:5000/myimage:latest"
+        - "--destination=registry.registry.svc.cluster.local:30500/myimage:latest"
         - "--insecure"
   restartPolicy: Never
 ```
@@ -142,10 +138,10 @@ spec:
 
 ```bash
 # List repositories
-curl -s http://${DB_IP}:30500/v2/_catalog
+curl -s http://registry.registry.svc.cluster.local:30500/v2/_catalog
 
 # List tags for an image
-curl -s http://${DB_IP}:30500/v2/myimage/tags/list
+curl -s http://registry.registry.svc.cluster.local:30500/v2/myimage/tags/list
 ```
 
 ## Important Notes

@@ -115,9 +115,9 @@ mkdir -p /var/lib/rancher/k3s/server/manifests
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
 mirrors:
-  "registry.registry.svc.cluster.local:5000":
+  "registry.registry.svc.cluster.local:30500":
     endpoint:
-      - "http://registry.registry.svc.cluster.local:5000"
+      - "http://registry.registry.svc.cluster.local:30500"
   "localhost:30500":
     endpoint:
       - "http://localhost:30500"
@@ -167,9 +167,9 @@ systemctl disable --now firewalld || true
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
 mirrors:
-  "registry.registry.svc.cluster.local:5000":
+  "registry.registry.svc.cluster.local:30500":
     endpoint:
-      - "http://registry.registry.svc.cluster.local:5000"
+      - "http://registry.registry.svc.cluster.local:30500"
   "localhost:30500":
     endpoint:
       - "http://localhost:30500"
@@ -206,9 +206,9 @@ systemctl disable --now firewalld || true
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
 mirrors:
-  "registry.registry.svc.cluster.local:5000":
+  "registry.registry.svc.cluster.local:30500":
     endpoint:
-      - "http://registry.registry.svc.cluster.local:5000"
+      - "http://registry.registry.svc.cluster.local:30500"
   "localhost:30500":
     endpoint:
       - "http://localhost:30500"

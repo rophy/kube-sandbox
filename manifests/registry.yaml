@@ -87,7 +87,7 @@ spec:
   selector:
     app: registry
   ports:
-    - port: 5000
+    - port: 30500
       targetPort: 5000
       nodePort: 30500
       name: http

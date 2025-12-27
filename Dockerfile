@@ -92,6 +92,10 @@ RUN ARCH=$(dpkg --print-architecture) && \
     dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
     rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
 
+# Grant passwordless sudo to node user
+RUN echo "node ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/node && \
+    chmod 0440 /etc/sudoers.d/node
+
 # Set up non-root user
 USER node
 
