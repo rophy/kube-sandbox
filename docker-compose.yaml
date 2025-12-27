@@ -3,8 +3,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: k3s-perf-test-dev
-    hostname: k3s-dev
+      args:
+        - USER_UID=${USER_UID:-1000}
+        - USER_GID=${USER_GID:-1000}
+        - DOCKER_GID=${DOCKER_GID:-999}
+    hostname: kube-sandbox
     env_file:
       - .env
     volumes:
@@ -12,7 +15,10 @@ services:
       - ${WORKSPACE_DIR:-.}:/workspace
       # AWS credentials (read-only)
       - ${HOME}/.aws:/home/node/.aws:ro
+      # Persist home settings
       - home:/home/node
+      # Access to docker
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       # Dev container marker
       - DEV_CONTAINER=true

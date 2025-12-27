@@ -4,8 +4,7 @@ help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 shell: ## Start container and open shell
-	docker compose up -d
-	docker compose exec -w /workspace dev bash
+	./scripts/shell.sh
 
 up: ## Create K3s cluster and fetch kubeconfig
 	cd terraform && timeout 180 terraform apply -auto-approve
