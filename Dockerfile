@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     wget \
     tini \
-    python \
+    python3 \
     python3-jinja2 \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
