@@ -9,7 +9,7 @@ services:
       - .env
     volumes:
       # Mount the project directory
-      - .:/workspace:cached
+      - ${WORKSPACE_DIR:-.}:/workspace
       # AWS credentials (read-only)
       - ${HOME}/.aws:/home/node/.aws:ro
       - home:/home/node
