@@ -8,11 +8,11 @@ shell: ## Start container and open shell
 	docker compose exec -w /workspace dev bash
 
 up: ## Create K3s cluster and fetch kubeconfig
-	cd /workspace/terraform && timeout 180 terraform apply -auto-approve
-	timeout 60 /workspace/scripts/fetch-kubeconfig.sh
+	cd terraform && timeout 180 terraform apply -auto-approve
+	timeout 60 ./scripts/fetch-kubeconfig.sh
 
 down: ## Destroy K3s cluster and clean up
-	cd /workspace/terraform && terraform destroy -auto-approve
+	cd terraform && terraform destroy -auto-approve
 	@echo "Checking for orphaned EBS volumes..."
 	@aws ec2 describe-volumes \
 		--filters "Name=tag-key,Values=kubernetes.io/created-for/pvc/name" \
@@ -21,7 +21,7 @@ down: ## Destroy K3s cluster and clean up
 	@echo "Cleanup complete"
 
 init: ## Run terraform init
-	cd /workspace/terraform && terraform init
+	cd terraform && terraform init
 
 kubeconfig: ## Fetch kubeconfig from K3s cluster
-	/workspace/scripts/fetch-kubeconfig.sh
+	./scripts/fetch-kubeconfig.sh
