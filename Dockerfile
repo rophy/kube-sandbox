@@ -53,7 +53,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
     chmod +x /usr/local/bin/helm
 
 # Install Claude and Happy Coder
-RUN npm install -g @anthropic-ai/claude-code@2.0.70 happy-coder
+RUN npm install -g @anthropic-ai/claude-code@2.0.75 happy-coder
 
 # Ensure default node user has access to /usr/local/share
 RUN mkdir -p /usr/local/share/npm-global && \

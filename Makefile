@@ -10,6 +10,7 @@ shell: ## Start container and open shell
 up: ## Create K3s cluster and fetch kubeconfig
 	cd terraform && timeout 180 terraform apply -auto-approve
 	timeout 60 ./scripts/fetch-kubeconfig.sh
+	./scripts/install-manifests.sh
 
 down: ## Destroy K3s cluster and clean up
 	cd terraform && terraform destroy -auto-approve

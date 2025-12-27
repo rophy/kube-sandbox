@@ -3,7 +3,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TERRAFORM_DIR="${SCRIPT_DIR}/../terraform"
-OUTPUT_FILE="${SCRIPT_DIR}/../kubeconfig.yaml"
+OUTPUT_FILE="${HOME}/.kube/config"
+
+# Ensure ~/.kube directory exists
+mkdir -p "${HOME}/.kube"
 
 echo "=== Fetching kubeconfig from K3s server ==="
 
@@ -102,8 +105,7 @@ if [ -s "$OUTPUT_FILE" ]; then
     echo "Kubeconfig saved to: $OUTPUT_FILE"
     echo "Server URL: $SERVER_URL"
     echo ""
-    echo "To use:"
-    echo "  export KUBECONFIG=$OUTPUT_FILE"
+    echo "kubectl is now ready to use:"
     echo "  kubectl get nodes"
 else
     echo "ERROR: Failed to fetch kubeconfig"

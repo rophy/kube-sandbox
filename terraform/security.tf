@@ -31,6 +31,15 @@ resource "aws_security_group" "k3s" {
     cidr_blocks = [var.allowed_ssh_cidr]
   }
 
+  # Docker Registry NodePort
+  ingress {
+    description = "Docker Registry"
+    from_port   = 30500
+    to_port     = 30500
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_ssh_cidr]
+  }
+
   # Allow all outbound
   egress {
     description = "All outbound"

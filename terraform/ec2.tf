@@ -111,6 +111,18 @@ fi
 # Create K3s manifests directory for auto-deploy
 mkdir -p /var/lib/rancher/k3s/server/manifests
 
+# Configure containerd to use insecure local registry
+mkdir -p /etc/rancher/k3s
+cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
+mirrors:
+  "registry.registry.svc.cluster.local:5000":
+    endpoint:
+      - "http://registry.registry.svc.cluster.local:5000"
+  "localhost:30500":
+    endpoint:
+      - "http://localhost:30500"
+REGISTRIES
+
 # Write EBS CSI Driver manifest
 cat > /var/lib/rancher/k3s/server/manifests/ebs-csi-driver.yaml << 'EBSCSI'
 ${file("${path.module}/../manifests/ebs-csi-driver.yaml")}
@@ -151,6 +163,18 @@ dnf install -y jq
 # Disable firewalld
 systemctl disable --now firewalld || true
 
+# Configure containerd to use insecure local registry
+mkdir -p /etc/rancher/k3s
+cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
+mirrors:
+  "registry.registry.svc.cluster.local:5000":
+    endpoint:
+      - "http://registry.registry.svc.cluster.local:5000"
+  "localhost:30500":
+    endpoint:
+      - "http://localhost:30500"
+REGISTRIES
+
 # Wait for server to be ready (retry logic)
 SERVER_IP="${aws_instance.db.private_ip}"
 until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
@@ -177,6 +201,18 @@ dnf install -y jq
 
 # Disable firewalld
 systemctl disable --now firewalld || true
+
+# Configure containerd to use insecure local registry
+mkdir -p /etc/rancher/k3s
+cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
+mirrors:
+  "registry.registry.svc.cluster.local:5000":
+    endpoint:
+      - "http://registry.registry.svc.cluster.local:5000"
+  "localhost:30500":
+    endpoint:
+      - "http://localhost:30500"
+REGISTRIES
 
 # Wait for server to be ready (retry logic)
 SERVER_IP="${aws_instance.db.private_ip}"

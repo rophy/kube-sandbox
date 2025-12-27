@@ -24,9 +24,6 @@ services:
       - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-ap-east-2}
       # Terraform
       - TF_PLUGIN_CACHE_DIR=/home/node/.terraform.d/plugin-cache
-      # Kubeconfig
-      - KUBECONFIG=/workspace/kubeconfig.yaml
-      # Happy Coder
     working_dir: /workspace
     stdin_open: true
     tty: true

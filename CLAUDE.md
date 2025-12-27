@@ -34,7 +34,7 @@ This is a disposable K3s cluster on AWS with minimal cost. The dev container pro
 - **AWS CLI** - AWS operations
 - **kubectl** - Kubernetes management
 
-KUBECONFIG is pre-configured in the dev container environment.
+Kubeconfig is fetched to `~/.kube/config` (kubectl default path).
 
 ## Project Structure
 
@@ -72,6 +72,81 @@ The cluster uses AWS EBS CSI driver for dynamic volume provisioning. This allows
 ### Storage Classes (auto-created)
 - `ebs-gp3` (default) - Standard gp3 volumes
 - `ebs-gp3-fast` - gp3 with 4000 IOPS, 250 MB/s throughput
+
+## Local Docker Registry
+
+The cluster includes a local Docker registry for in-cluster image builds and deployments. It is automatically deployed by `make up`.
+
+### Registry Endpoints
+
+| Context | Endpoint |
+|---------|----------|
+| From pods (in-cluster) | `registry.registry.svc.cluster.local:5000` |
+| From K3s nodes | `localhost:30500` |
+| From outside (dev container) | `<DB_NODE_IP>:30500` |
+
+### Pushing Images from Dev Container
+
+```bash
+# Get the registry endpoint
+DB_IP=$(kubectl get nodes -l workload=db -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
+
+# Tag and push
+docker tag myimage:latest ${DB_IP}:30500/myimage:latest
+docker push ${DB_IP}:30500/myimage:latest
+```
+
+### Using Images in Kubernetes
+
+Reference images using the in-cluster endpoint:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+spec:
+  containers:
+    - name: app
+      image: registry.registry.svc.cluster.local:5000/myimage:latest
+```
+
+Or use `localhost:30500` since all nodes have access via NodePort:
+
+```yaml
+image: localhost:30500/myimage:latest
+```
+
+### Building Images Inside the Cluster (Kaniko)
+
+For CI/CD pipelines that build images inside Kubernetes:
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kaniko-build
+spec:
+  containers:
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:latest
+      args:
+        - "--dockerfile=Dockerfile"
+        - "--context=git://github.com/user/repo.git"
+        - "--destination=registry.registry.svc.cluster.local:5000/myimage:latest"
+        - "--insecure"
+  restartPolicy: Never
+```
+
+### Checking Registry Contents
+
+```bash
+# List repositories
+curl -s http://${DB_IP}:30500/v2/_catalog
+
+# List tags for an image
+curl -s http://${DB_IP}:30500/v2/myimage/tags/list
+```
 
 ## Important Notes
 
