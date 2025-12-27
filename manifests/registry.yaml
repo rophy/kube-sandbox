@@ -15,7 +15,7 @@ spec:
   storageClassName: ebs-gp3
   resources:
     requests:
-      storage: 20Gi
+      storage: 100Gi
 ---
 apiVersion: apps/v1
 kind: Deployment
