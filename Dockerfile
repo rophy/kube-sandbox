@@ -27,15 +27,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       python3 \
       python3-jinja2 \
       bash-completion \
-      # Podman for daemonless container builds
+      # Podman for container builds (replaces Docker)
       podman \
       fuse-overlayfs \
       slirp4netns \
       uidmap \
-    # Docker CLI (for host docker access via socket)
-    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list \
-    && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
     && apt-get clean && rm -rf /var/lib/apt/lists/* \
     # AWS CLI
     && ARCH=$(dpkg --print-architecture) \
@@ -67,19 +63,14 @@ ARG USERNAME=node
 # User/group ID configuration (set at build time via .env)
 ARG USER_UID=1000
 ARG USER_GID=1000
-ARG DOCKER_GID=999
 
-# Update node user UID/GID to match host user, and set up docker group
+# Update node user UID/GID to match host user
 RUN if [ "$USER_GID" != "1000" ]; then \
         groupmod -g $USER_GID node; \
     fi && \
     if [ "$USER_UID" != "1000" ]; then \
         usermod -u $USER_UID node; \
     fi && \
-    # Create docker group with host's docker GID and add node user
-    groupadd -g $DOCKER_GID docker 2>/dev/null || groupmod -g $DOCKER_GID docker 2>/dev/null || true && \
-    usermod -aG docker node && \
-    # Fix ownership of node's home directory
     chown -R node:node /home/node /usr/local/share/npm-global
 
 # Set environment variables
@@ -90,13 +81,8 @@ ENV TERM=xterm-256color
 RUN mkdir -p /workspace /home/node/.claude /home/node/.aws /home/node/.kube /home/node/.terraform.d/plugin-cache && \
     chown -R node:node /workspace /home/node/.claude /home/node/.aws /home/node/.kube /home/node/.terraform.d
 
-# Configure Podman for rootless operation
-RUN echo "node:100000:65536" >> /etc/subuid && \
-    echo "node:100000:65536" >> /etc/subgid && \
-    mkdir -p /home/node/.config/containers && \
-    chown -R node:node /home/node/.config
-
-# Podman storage config for rootless with fuse-overlayfs
+# Podman runs as root via sudo (rootless not supported inside Docker)
+# Use fuse-overlayfs for better compatibility
 RUN mkdir -p /etc/containers && \
     echo '[storage]' > /etc/containers/storage.conf && \
     echo 'driver = "overlay"' >> /etc/containers/storage.conf && \
@@ -121,6 +107,7 @@ RUN cat > /etc/profile.d/devcontainer.sh << 'EOF'
 # Aliases
 alias claude="claude --dangerously-skip-permissions"
 alias happy="happy --dangerously-skip-permissions"
+alias podman="sudo podman"
 
 # Enable bash-completion
 if [ -f /usr/share/bash-completion/bash_completion ]; then
