@@ -13,6 +13,8 @@ services:
     volumes:
       # Mount the project directory
       - ${WORKSPACE_DIR:-.}:/workspace
+      # Claude config (for user-level CLAUDE.md)
+      - ${HOME}/.claude/CLAUDE.md:/home/node/.claude/CLAUDE.md:ro
       # AWS credentials (read-only)
       - ${HOME}/.aws:/home/node/.aws:ro
       # Persist home settings
@@ -22,6 +24,8 @@ services:
     environment:
       # Dev container marker
       - DEV_CONTAINER=true
+      # Customizations
+      - TERM=xterm-256color
       # AWS environment variables (if using env vars instead of credentials file)
       - AWS_ACCESS_KEY_ID
       - AWS_SECRET_ACCESS_KEY
@@ -37,6 +41,12 @@ services:
     user: node
     # Use tini as init (already set in Dockerfile, but explicit here too)
     init: true
+    # Required for rootless Podman
+    devices:
+      - /dev/fuse
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
 
 volumes:
     home:

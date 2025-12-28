@@ -81,15 +81,7 @@ The cluster includes a local Docker registry for in-cluster image builds and dep
 
 Use the same registry address everywhere: `registry.registry.svc.cluster.local:30500`
 
-### Setup (one-time after `make up`)
-
-Add the DB node IP to `/etc/hosts` in the dev container:
-
-```bash
-# Get DB node IP and add to /etc/hosts
-DB_IP=$(kubectl get nodes -l workload=db -o jsonpath='{.items[0].status.addresses[?(@.type=="ExternalIP")].address}')
-echo "${DB_IP} registry.registry.svc.cluster.local" | sudo tee -a /etc/hosts
-```
+The `/etc/hosts` entry is automatically added by `make up`.
 
 ### Pushing Images
 
