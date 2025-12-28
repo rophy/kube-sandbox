@@ -26,7 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       tini \
       python3 \
       python3-jinja2 \
-    # Docker CLI
+      bash-completion \
+      # Podman for daemonless container builds
+      podman \
+      fuse-overlayfs \
+      slirp4netns \
+      uidmap \
+    # Docker CLI (for host docker access via socket)
     && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" > /etc/apt/sources.list.d/docker.list \
     && apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
@@ -78,10 +84,24 @@ RUN if [ "$USER_GID" != "1000" ]; then \
 
 # Set environment variables
 ENV DEV_CONTAINER=true
+ENV TERM=xterm-256color
 
 # Create workspace and config directories and set permissions
 RUN mkdir -p /workspace /home/node/.claude /home/node/.aws /home/node/.kube /home/node/.terraform.d/plugin-cache && \
     chown -R node:node /workspace /home/node/.claude /home/node/.aws /home/node/.kube /home/node/.terraform.d
+
+# Configure Podman for rootless operation
+RUN echo "node:100000:65536" >> /etc/subuid && \
+    echo "node:100000:65536" >> /etc/subgid && \
+    mkdir -p /home/node/.config/containers && \
+    chown -R node:node /home/node/.config
+
+# Podman storage config for rootless with fuse-overlayfs
+RUN mkdir -p /etc/containers && \
+    echo '[storage]' > /etc/containers/storage.conf && \
+    echo 'driver = "overlay"' >> /etc/containers/storage.conf && \
+    echo '[storage.options.overlay]' >> /etc/containers/storage.conf && \
+    echo 'mount_program = "/usr/bin/fuse-overlayfs"' >> /etc/containers/storage.conf
 
 WORKDIR /workspace
 
@@ -96,13 +116,20 @@ RUN ARCH=$(dpkg --print-architecture) && \
 RUN echo "node ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/node && \
     chmod 0440 /etc/sudoers.d/node
 
+# Setup dev container env (in /etc/profile.d/ so it persists regardless of home volume)
+RUN cat > /etc/profile.d/devcontainer.sh << 'EOF'
+# Aliases
+alias claude="claude --dangerously-skip-permissions"
+alias happy="happy --dangerously-skip-permissions"
+
+# Enable bash-completion
+if [ -f /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+fi
+EOF
+
 # Set up non-root user
 USER node
-
-# Setup dev container env
-RUN echo 'alias claude="claude --dangerously-skip-permissions"' >> /home/node/.bashrc && \
-    echo 'alias happy="happy --dangerously-skip-permissions"' >> /home/node/.bashrc
-#    npm install -g happy-coder
 
 # Install global packages
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global

@@ -1,10 +1,13 @@
-.PHONY: help shell up down init kubeconfig
+.PHONY: help shell up down init kubeconfig build-devcontainer
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 shell: ## Start container and open shell
 	./scripts/shell.sh
+
+build-devcontainer: ## Build the dev container image
+	./scripts/build-devcontainer.sh
 
 up: ## Create K3s cluster and fetch kubeconfig
 	cd terraform && timeout 180 terraform apply -auto-approve
