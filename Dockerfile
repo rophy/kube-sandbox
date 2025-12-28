@@ -86,6 +86,8 @@ RUN mkdir -p /workspace /home/node/.claude /home/node/.aws /home/node/.kube /hom
 RUN mkdir -p /etc/containers && \
     echo '[storage]' > /etc/containers/storage.conf && \
     echo 'driver = "overlay"' >> /etc/containers/storage.conf && \
+    echo 'runroot = "/run/user/1000/containers"' >> /etc/containers/storage.conf && \
+    echo 'graphroot = "/home/node/.local/share/containers/storage"' >> /etc/containers/storage.conf && \
     echo '[storage.options.overlay]' >> /etc/containers/storage.conf && \
     echo 'mount_program = "/usr/bin/fuse-overlayfs"' >> /etc/containers/storage.conf
 

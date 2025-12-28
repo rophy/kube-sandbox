@@ -49,6 +49,14 @@ make init  # First time only
 make up    # Creates cluster and fetches kubeconfig
 ```
 
+### Check Cluster Creation Time
+```bash
+aws ec2 describe-vpcs --filters "Name=tag:Name,Values=k3s-perf-test-vpc" \
+  --query 'Vpcs[0].Tags[?Key==`kube-sandbox/created-at`].Value' --output text
+```
+
+This timestamp is set when the VPC is first created and preserved across subsequent `terraform apply` runs.
+
 ### Get Kubeconfig (if needed separately)
 ```bash
 make kubeconfig
@@ -73,68 +81,51 @@ The cluster uses AWS EBS CSI driver for dynamic volume provisioning. This allows
 - `ebs-gp3` (default) - Standard gp3 volumes
 - `ebs-gp3-fast` - gp3 with 4000 IOPS, 250 MB/s throughput
 
-## Local Docker Registry
+## Container Registry (ECR)
 
-The cluster includes a local Docker registry for in-cluster image builds and deployments. It is automatically deployed by `make up`.
+The dev container is configured to use AWS ECR as the container registry. This provides a consistent registry endpoint that works from both the dev container and inside K8s pods.
 
-### Registry Endpoint
+### How It Works
 
-Use the same registry address everywhere: `registry.registry.svc.cluster.local:30500`
+When you run `make build-devcontainer`, the build script:
+1. Validates AWS credentials
+2. Gets your AWS account ID and region
+3. Sets `SKAFFOLD_DEFAULT_REPO` in `.env` (e.g., `572921885201.dkr.ecr.ap-east-2.amazonaws.com`)
 
-The `/etc/hosts` entry is automatically added by `make up`.
+The env var is loaded into the container via docker-compose's `env_file` directive.
+
+### Environment Variable
+
+The container has `SKAFFOLD_DEFAULT_REPO` set automatically:
+```bash
+echo $SKAFFOLD_DEFAULT_REPO
+# Output: 572921885201.dkr.ecr.ap-east-2.amazonaws.com
+```
 
 ### Pushing Images
 
 ```bash
-docker tag myimage:latest registry.registry.svc.cluster.local:30500/myimage:latest
-docker push registry.registry.svc.cluster.local:30500/myimage:latest
+# Login to ECR (valid for 12 hours)
+aws ecr get-login-password | podman login --username AWS --password-stdin $SKAFFOLD_DEFAULT_REPO
+
+# Push images
+podman tag myimage:latest $SKAFFOLD_DEFAULT_REPO/myimage:latest
+podman push $SKAFFOLD_DEFAULT_REPO/myimage:latest
 ```
 
-### Using Images in Kubernetes
+### Using with Skaffold
 
-Use the same image reference in pod specs:
-
+Skaffold automatically uses `SKAFFOLD_DEFAULT_REPO` to prefix image names:
 ```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: example
-spec:
-  containers:
-    - name: app
-      image: registry.registry.svc.cluster.local:30500/myimage:latest
+# skaffold.yaml - images are automatically prefixed with ECR URL
+build:
+  artifacts:
+    - image: myapp  # becomes: 572921885201.dkr.ecr.ap-east-2.amazonaws.com/myapp
 ```
 
-### Building Images Inside the Cluster (Kaniko)
+### K8s Node Access
 
-For CI/CD pipelines that build images inside Kubernetes:
-
-```yaml
-apiVersion: v1
-kind: Pod
-metadata:
-  name: kaniko-build
-spec:
-  containers:
-    - name: kaniko
-      image: gcr.io/kaniko-project/executor:latest
-      args:
-        - "--dockerfile=Dockerfile"
-        - "--context=git://github.com/user/repo.git"
-        - "--destination=registry.registry.svc.cluster.local:30500/myimage:latest"
-        - "--insecure"
-  restartPolicy: Never
-```
-
-### Checking Registry Contents
-
-```bash
-# List repositories
-curl -s http://registry.registry.svc.cluster.local:30500/v2/_catalog
-
-# List tags for an image
-curl -s http://registry.registry.svc.cluster.local:30500/v2/myimage/tags/list
-```
+K8s nodes have IAM instance profiles with ECR pull permissions, so pods can pull images without additional configuration.
 
 ## Important Notes
 

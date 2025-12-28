@@ -13,6 +13,8 @@ up: ## Create K3s cluster and fetch kubeconfig
 	cd terraform && timeout 180 terraform apply -auto-approve
 	timeout 60 ./scripts/fetch-kubeconfig.sh
 	./scripts/install-manifests.sh
+	@echo ""
+	@echo "Cluster created at: $$(aws ec2 describe-vpcs --filters 'Name=tag:Name,Values=k3s-perf-test-vpc' --query 'Vpcs[0].Tags[?Key==`kube-sandbox/created-at`].Value' --output text)"
 
 down: ## Destroy K3s cluster and clean up
 	cd terraform && terraform destroy -auto-approve

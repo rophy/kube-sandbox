@@ -246,12 +246,11 @@ resource "aws_instance" "db" {
 
   user_data = local.k3s_server_userdata
 
-  instance_market_options {
-    market_type = var.use_spot_instances ? "spot" : null
-
-    dynamic "spot_options" {
-      for_each = var.use_spot_instances ? [1] : []
-      content {
+  dynamic "instance_market_options" {
+    for_each = var.use_spot_instances ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
         instance_interruption_behavior = "terminate"
         spot_instance_type             = "one-time"
       }
@@ -281,12 +280,11 @@ resource "aws_instance" "stream" {
 
   user_data = local.k3s_agent_stream_userdata
 
-  instance_market_options {
-    market_type = var.use_spot_instances ? "spot" : null
-
-    dynamic "spot_options" {
-      for_each = var.use_spot_instances ? [1] : []
-      content {
+  dynamic "instance_market_options" {
+    for_each = var.use_spot_instances ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
         instance_interruption_behavior = "terminate"
         spot_instance_type             = "one-time"
       }
@@ -318,12 +316,11 @@ resource "aws_instance" "client" {
 
   user_data = local.k3s_agent_client_userdata
 
-  instance_market_options {
-    market_type = var.use_spot_instances ? "spot" : null
-
-    dynamic "spot_options" {
-      for_each = var.use_spot_instances ? [1] : []
-      content {
+  dynamic "instance_market_options" {
+    for_each = var.use_spot_instances ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
         instance_interruption_behavior = "terminate"
         spot_instance_type             = "one-time"
       }

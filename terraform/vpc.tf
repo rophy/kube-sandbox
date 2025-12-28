@@ -14,7 +14,12 @@ resource "aws_vpc" "main" {
   enable_dns_support   = true
 
   tags = {
-    Name = "k3s-perf-test-vpc"
+    Name                      = "k3s-perf-test-vpc"
+    "kube-sandbox/created-at" = timestamp()
+  }
+
+  lifecycle {
+    ignore_changes = [tags["kube-sandbox/created-at"]]
   }
 }
 
