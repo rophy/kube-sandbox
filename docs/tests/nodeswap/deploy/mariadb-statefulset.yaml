@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mariadb-no-swap
+  labels:
+    app: mariadb
+    swap: disabled
+spec:
+  serviceName: mariadb-no-swap
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+      swap: disabled
+  template:
+    metadata:
+      labels:
+        app: mariadb
+        swap: disabled
+    spec:
+      nodeSelector:
+        swap: disabled
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: mariadb
+        image: mariadb:11
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          value: "testpass"
+        - name: MARIADB_DATABASE
+          value: "testdb"
+        resources:
+          requests:
+            memory: "256Mi"
+          limits:
+            memory: "512Mi"
+        ports:
+        - containerPort: 3306
+          name: mysql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mariadb-with-swap
+  labels:
+    app: mariadb
+    swap: enabled
+spec:
+  serviceName: mariadb-with-swap
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mariadb
+      swap: enabled
+  template:
+    metadata:
+      labels:
+        app: mariadb
+        swap: enabled
+    spec:
+      nodeSelector:
+        swap: enabled
+      containers:
+      - name: mariadb
+        image: mariadb:11
+        env:
+        - name: MARIADB_ROOT_PASSWORD
+          value: "testpass"
+        - name: MARIADB_DATABASE
+          value: "testdb"
+        resources:
+          requests:
+            memory: "256Mi"
+          limits:
+            memory: "512Mi"
+        ports:
+        - containerPort: 3306
+          name: mysql
