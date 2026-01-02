@@ -20,9 +20,9 @@ down: ## Destroy K3s cluster and clean up
 	cd terraform && terraform destroy -auto-approve
 	@echo "Checking for orphaned EBS volumes..."
 	@aws ec2 describe-volumes \
-		--filters "Name=tag-key,Values=kubernetes.io/created-for/pvc/name" \
-		--query 'Volumes[*].VolumeId' --output text 2>/dev/null | \
-		xargs -r -n1 aws ec2 delete-volume --volume-id 2>/dev/null || true
+		--filters "Name=tag:kube-sandbox,Values=true" "Name=status,Values=available" \
+		--query 'Volumes[*].VolumeId' --output json 2>/dev/null | \
+		jq -r '.[]' | xargs -r -I{} aws ec2 delete-volume --volume-id {} 2>/dev/null || true
 	@echo "Cleanup complete"
 
 init: ## Run terraform init

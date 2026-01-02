@@ -11,6 +11,7 @@ reclaimPolicy: Delete
 parameters:
   type: gp3
   fsType: ext4
+  tagSpecification_1: "kube-sandbox=true"
 allowVolumeExpansion: true
 ---
 apiVersion: storage.k8s.io/v1
@@ -25,4 +26,5 @@ parameters:
   fsType: ext4
   iops: "4000"
   throughput: "250"
+  tagSpecification_1: "kube-sandbox=true"
 allowVolumeExpansion: true
