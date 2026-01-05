@@ -135,6 +135,7 @@ SYSBENCH_OUTPUT=$(kubectl exec "$SYSBENCH_POD" -- sysbench "$WORKLOAD" \
   --tables="$TABLES" \
   --threads="$THREADS" \
   --time="$DURATION" \
+  --thread-init-timeout=300 \
   run 2>&1)
 SYSBENCH_EXIT_CODE=$?
 set -e
