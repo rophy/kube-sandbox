@@ -113,8 +113,12 @@ done
 
 echo "=== Phase 4: Run sysbench test ===" >&2
 
-# Get node info
+# Get node info and container ID (for filtering metrics after pod recreation)
 NODE=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.spec.nodeName}')
+CONTAINER_ID=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.containerStatuses[0].containerID}' | sed 's|containerd://||')
+
+# Record initial restart count to detect OOMKill during test
+INITIAL_RESTARTS=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
 
 # Record start time
 START_TIME=$(date +%s)
@@ -159,14 +163,31 @@ AVG_LATENCY=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'avg:\s+\K[0-9.]+' || echo "0")
 P95_LATENCY=$(echo "$SYSBENCH_OUTPUT" | grep -oP '95th percentile:\s+\K[0-9.]+' || echo "0")
 TOTAL_TIME=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'total time:\s+\K[0-9.]+' || echo "0")
 
-# Check pod status
-RESTARTS=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
-POD_STATUS=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-LAST_STATE=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.reason}' 2>/dev/null || echo "")
+# Wait for pod state to stabilize after potential OOMKill
+# The pod may be restarting, give it time to update status
+echo "Waiting for pod state to stabilize..." >&2
+sleep 5
 
-# Determine outcome
-if [ "$LAST_STATE" = "OOMKilled" ] || [ "$POD_STATUS" != "Running" ]; then
+# Check pod status with retry (pod may still be initializing after OOMKill)
+for i in {1..5}; do
+  RESTARTS=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.containerStatuses[0].restartCount}' 2>/dev/null || echo "0")
+  POD_STATUS=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
+  LAST_STATE=$(kubectl get pod "$MARIADB_POD" -o jsonpath='{.status.containerStatuses[0].lastState.terminated.reason}' 2>/dev/null || echo "")
+
+  # If pod is running and we got valid data, break
+  if [ "$POD_STATUS" = "Running" ] && [ -n "$RESTARTS" ]; then
+    break
+  fi
+  echo "Pod not ready yet, retrying... ($i/5)" >&2
+  sleep 2
+done
+
+# Determine outcome by comparing restart counts
+# If restarts increased during test, pod was OOMKilled
+RESTART_DIFF=$((RESTARTS - INITIAL_RESTARTS))
+if [ "$RESTART_DIFF" -gt 0 ] || [ "$LAST_STATE" = "OOMKilled" ] || [ "$POD_STATUS" != "Running" ]; then
   OUTCOME="OOMKilled"
+  echo "Pod was OOMKilled (restarts: $INITIAL_RESTARTS -> $RESTARTS, lastState: $LAST_STATE)" >&2
 else
   OUTCOME="Survived"
 fi
@@ -181,17 +202,17 @@ PSWPOUT_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
 PSWPIN_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
   "wget -qO- 'http://localhost:9090/api/v1/query_range?query=rate(node_vmstat_pswpin%5B15s%5D)&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
 
-# Container memory usage
+# Container memory usage (filter by container ID to avoid stale metrics from previous pod)
 MEMORY_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
-  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=container_memory_usage_bytes%7Bpod%3D%22${MARIADB_POD}%22%2Ccontainer%3D%22mariadb%22%7D&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
+  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=container_memory_usage_bytes%7Bname%3D%22${CONTAINER_ID}%22%7D&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
 
-# Container swap usage
+# Container swap usage (filter by container ID)
 SWAP_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
-  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=container_memory_swap%7Bpod%3D%22${MARIADB_POD}%22%2Ccontainer%3D%22mariadb%22%7D&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
+  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=container_memory_swap%7Bname%3D%22${CONTAINER_ID}%22%7D&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
 
-# Container CPU usage (rate of cpu seconds)
+# Container CPU usage (rate of cpu seconds, filter by container ID)
 CPU_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
-  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=rate(container_cpu_usage_seconds_total%7Bpod%3D%22${MARIADB_POD}%22%2Ccontainer%3D%22mariadb%22%7D%5B30s%5D)&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
+  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=rate(container_cpu_usage_seconds_total%7Bname%3D%22${CONTAINER_ID}%22%7D%5B30s%5D)&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
 
 # Extract time series from Prometheus responses
 extract_values() {
@@ -306,6 +327,7 @@ cat << EOF
   "outcome": {
     "status": "$OUTCOME",
     "pod_restarts": $RESTARTS,
+    "restarts_during_test": $RESTART_DIFF,
     "last_termination_reason": "$LAST_STATE"
   },
   "metrics": {
