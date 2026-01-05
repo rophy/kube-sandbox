@@ -161,7 +161,12 @@ TPS=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'transactions:\s+\d+\s+\(\K[0-9.]+' || 
 QPS=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'queries:\s+\d+\s+\(\K[0-9.]+' || echo "0")
 AVG_LATENCY=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'avg:\s+\K[0-9.]+' || echo "0")
 P95_LATENCY=$(echo "$SYSBENCH_OUTPUT" | grep -oP '95th percentile:\s+\K[0-9.]+' || echo "0")
-TOTAL_TIME=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'total time:\s+\K[0-9.]+' || echo "0")
+TOTAL_TIME=$(echo "$SYSBENCH_OUTPUT" | grep -oP 'total time:\s+\K[0-9.]+' || echo "")
+
+# Fall back to calculated duration if sysbench didn't report total time (e.g., OOMKill)
+if [ -z "$TOTAL_TIME" ] || [ "$TOTAL_TIME" = "0" ]; then
+  TOTAL_TIME=$((END_TIME - START_TIME))
+fi
 
 # Wait for pod state to stabilize after potential OOMKill
 # The pod may be restarting, give it time to update status
