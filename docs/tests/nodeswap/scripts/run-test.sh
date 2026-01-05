@@ -80,14 +80,26 @@ done
 echo "=== Phase 3: Prepare sysbench tables ===" >&2
 SYSBENCH_POD=$(kubectl get pod -l app=sysbench -o jsonpath='{.items[0].metadata.name}')
 
-kubectl exec "$SYSBENCH_POD" -- sysbench oltp_read_write \
-  --mysql-host="$MYSQL_HOST" \
-  --mysql-user=root \
-  --mysql-password=testpass \
-  --mysql-db=testdb \
-  --table-size=100000 \
-  --tables=4 \
-  prepare >&2
+# Retry loop for sysbench prepare (network may need time to be ready)
+for i in {1..10}; do
+  if kubectl exec "$SYSBENCH_POD" -- sysbench oltp_read_write \
+    --mysql-host="$MYSQL_HOST" \
+    --mysql-user=root \
+    --mysql-password=testpass \
+    --mysql-db=testdb \
+    --table-size=100000 \
+    --tables=4 \
+    prepare >&2 2>/dev/null; then
+    echo "Sysbench tables prepared successfully" >&2
+    break
+  fi
+  if [ $i -eq 10 ]; then
+    echo "Failed to prepare sysbench tables after 10 attempts" >&2
+    exit 1
+  fi
+  echo "Waiting for MariaDB connection from sysbench... ($i/10)" >&2
+  sleep 3
+done
 
 echo "=== Phase 4: Run sysbench test ===" >&2
 
@@ -102,7 +114,8 @@ echo "Starting test: $THREADS threads, $DURATION seconds" >&2
 echo "Target: $MYSQL_HOST on node $NODE" >&2
 echo "Start time: $START_TIME_ISO" >&2
 
-# Run sysbench
+# Run sysbench (don't exit on failure - pod may OOMKill)
+set +e
 SYSBENCH_OUTPUT=$(kubectl exec "$SYSBENCH_POD" -- sysbench oltp_read_write \
   --mysql-host="$MYSQL_HOST" \
   --mysql-user=root \
@@ -113,12 +126,18 @@ SYSBENCH_OUTPUT=$(kubectl exec "$SYSBENCH_POD" -- sysbench oltp_read_write \
   --threads="$THREADS" \
   --time="$DURATION" \
   run 2>&1)
+SYSBENCH_EXIT_CODE=$?
+set -e
 
 # Record end time
 END_TIME=$(date +%s)
 END_TIME_ISO=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 echo "End time: $END_TIME_ISO" >&2
+
+if [ $SYSBENCH_EXIT_CODE -ne 0 ]; then
+  echo "Sysbench exited with code $SYSBENCH_EXIT_CODE (possible OOMKill)" >&2
+fi
 
 echo "=== Phase 5: Collect metrics ===" >&2
 
