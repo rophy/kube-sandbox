@@ -16,9 +16,14 @@
 #   threads       Number of sysbench threads
 #   duration      Test duration in seconds (default: 60)
 #
+# Workload config (memory-intensive):
+#   - table-size: 500000 rows per table (~500MB dataset)
+#   - tables: 4
+#   - workload: oltp_read_only (forces buffer pool usage)
+#
 # Examples:
-#   ./run-test.sh mariadb-with-swap 400 60
-#   ./run-test.sh mariadb-no-swap 400 60
+#   ./run-test.sh mariadb-no-swap 50
+#   ./run-test.sh mariadb-with-swap 50 120
 #
 
 set -e
@@ -32,8 +37,8 @@ usage() {
   echo "  duration      Test duration in seconds (default: 60)"
   echo ""
   echo "Examples:"
-  echo "  $0 mariadb-with-swap 400 60"
-  echo "  $0 mariadb-no-swap 400 60"
+  echo "  $0 mariadb-no-swap 50"
+  echo "  $0 mariadb-with-swap 50 120"
   exit 1
 }
 
@@ -43,7 +48,13 @@ fi
 
 MYSQL_HOST="$1"
 THREADS="$2"
-DURATION=${3:-60}
+DURATION="${3:-60}"
+
+# Memory-intensive workload config
+# Large tables + read-write workload = more buffer pool + transaction log pressure
+TABLE_SIZE=500000
+TABLES=4
+WORKLOAD="oltp_read_write"
 
 # Validate mariadb-host
 if [[ "$MYSQL_HOST" != "mariadb-with-swap" && "$MYSQL_HOST" != "mariadb-no-swap" ]]; then
@@ -66,7 +77,6 @@ echo "=== Phase 2: Configure MariaDB ===" >&2
 # Retry loop for MariaDB configuration (may need time to accept connections)
 for i in {1..10}; do
   if kubectl exec "$MARIADB_POD" -- mariadb -uroot -ptestpass -e "
-    SET GLOBAL innodb_buffer_pool_size = 429916160;
     SET GLOBAL max_connections = 2000;
     SET GLOBAL max_prepared_stmt_count = 100000;
   " >&2 2>/dev/null; then
@@ -82,13 +92,13 @@ SYSBENCH_POD=$(kubectl get pod -l app=sysbench -o jsonpath='{.items[0].metadata.
 
 # Retry loop for sysbench prepare (network may need time to be ready)
 for i in {1..10}; do
-  if kubectl exec "$SYSBENCH_POD" -- sysbench oltp_read_write \
+  if kubectl exec "$SYSBENCH_POD" -- sysbench "$WORKLOAD" \
     --mysql-host="$MYSQL_HOST" \
     --mysql-user=root \
     --mysql-password=testpass \
     --mysql-db=testdb \
-    --table-size=100000 \
-    --tables=4 \
+    --table-size="$TABLE_SIZE" \
+    --tables="$TABLES" \
     prepare >&2 2>/dev/null; then
     echo "Sysbench tables prepared successfully" >&2
     break
@@ -116,13 +126,13 @@ echo "Start time: $START_TIME_ISO" >&2
 
 # Run sysbench (don't exit on failure - pod may OOMKill)
 set +e
-SYSBENCH_OUTPUT=$(kubectl exec "$SYSBENCH_POD" -- sysbench oltp_read_write \
+SYSBENCH_OUTPUT=$(kubectl exec "$SYSBENCH_POD" -- sysbench "$WORKLOAD" \
   --mysql-host="$MYSQL_HOST" \
   --mysql-user=root \
   --mysql-password=testpass \
   --mysql-db=testdb \
-  --table-size=100000 \
-  --tables=4 \
+  --table-size="$TABLE_SIZE" \
+  --tables="$TABLES" \
   --threads="$THREADS" \
   --time="$DURATION" \
   run 2>&1)
@@ -244,7 +254,10 @@ cat << EOF
     "threads": $THREADS,
     "duration": $DURATION,
     "target": "$MYSQL_HOST",
-    "node": "$NODE"
+    "node": "$NODE",
+    "workload": "$WORKLOAD",
+    "table_size": $TABLE_SIZE,
+    "tables": $TABLES
   },
   "timing": {
     "start": "$START_TIME_ISO",
