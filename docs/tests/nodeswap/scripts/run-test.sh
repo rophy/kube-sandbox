@@ -188,6 +188,10 @@ MEMORY_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
 SWAP_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
   "wget -qO- 'http://localhost:9090/api/v1/query_range?query=container_memory_swap%7Bpod%3D%22${MARIADB_POD}%22%2Ccontainer%3D%22mariadb%22%7D&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
 
+# Container CPU usage (rate of cpu seconds)
+CPU_DATA=$(kubectl exec -n monitoring "$PROM_POD" -- sh -c \
+  "wget -qO- 'http://localhost:9090/api/v1/query_range?query=rate(container_cpu_usage_seconds_total%7Bpod%3D%22${MARIADB_POD}%22%2Ccontainer%3D%22mariadb%22%7D%5B30s%5D)&start=$START_TIME&end=$END_TIME&step=5'" 2>/dev/null)
+
 # Extract time series from Prometheus responses
 extract_values() {
   local data="$1"
@@ -210,6 +214,7 @@ PSWPOUT_VALUES=$(extract_values "$PSWPOUT_DATA" "$NODE")
 PSWPIN_VALUES=$(extract_values "$PSWPIN_DATA" "$NODE")
 MEMORY_VALUES=$(extract_values "$MEMORY_DATA" "")
 SWAP_VALUES=$(extract_values "$SWAP_DATA" "")
+CPU_VALUES=$(extract_values "$CPU_DATA" "")
 
 # Calculate peak values
 calc_peak() {
@@ -246,6 +251,31 @@ AVG_MEMORY=$(calc_avg "$MEMORY_VALUES")
 AVG_SWAP=$(calc_avg "$SWAP_VALUES")
 PEAK_MEMORY=$(calc_peak "$MEMORY_VALUES")
 PEAK_SWAP=$(calc_peak "$SWAP_VALUES")
+
+# CPU is a rate (0-N cores), calculate as percentage of 1 core
+AVG_CPU=$(echo "$CPU_VALUES" | python3 -c "
+import sys, json
+try:
+    vals = json.load(sys.stdin)
+    if vals:
+        print(round(sum(float(v[1]) for v in vals) / len(vals) * 100, 1))
+    else:
+        print(0)
+except:
+    print(0)
+" 2>/dev/null || echo "0")
+
+PEAK_CPU=$(echo "$CPU_VALUES" | python3 -c "
+import sys, json
+try:
+    vals = json.load(sys.stdin)
+    if vals:
+        print(round(max(float(v[1]) for v in vals) * 100, 1))
+    else:
+        print(0)
+except:
+    print(0)
+" 2>/dev/null || echo "0")
 
 # Output JSON result
 cat << EOF
@@ -294,11 +324,16 @@ cat << EOF
       "peak_pswpout_per_sec": $PEAK_PSWPOUT,
       "peak_pswpin_per_sec": $PEAK_PSWPIN
     },
+    "cpu": {
+      "avg_percent": $AVG_CPU,
+      "peak_percent": $PEAK_CPU
+    },
     "time_series": {
       "pswpout": $PSWPOUT_VALUES,
       "pswpin": $PSWPIN_VALUES,
       "memory_bytes": $MEMORY_VALUES,
-      "swap_bytes": $SWAP_VALUES
+      "swap_bytes": $SWAP_VALUES,
+      "cpu_rate": $CPU_VALUES
     }
   }
 }

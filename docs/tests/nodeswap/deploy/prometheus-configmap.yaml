@@ -49,9 +49,9 @@ data:
           target_label: __metrics_path__
           replacement: /api/v1/nodes/${1}/proxy/metrics/cadvisor
         metric_relabel_configs:
-        # Keep only memory-related metrics to reduce storage
+        # Keep only memory and CPU metrics to reduce storage
         - source_labels: [__name__]
-          regex: 'container_memory_(swap|usage_bytes|working_set_bytes|failcnt|rss)'
+          regex: 'container_memory_(swap|usage_bytes|working_set_bytes|failcnt|rss)|container_cpu_usage_seconds_total'
           action: keep
 
       # Scrape kubelet metrics
