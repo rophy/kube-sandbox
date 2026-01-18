@@ -24,7 +24,7 @@ spec:
         - name: ecr-secret
       containers:
         - name: api
-          image: 513129860998.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-api:0.9.0
+          image: 513129860998.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-api:0.9.1
           command: ["/var/runtime/api"]
           ports:
             - containerPort: 8080
