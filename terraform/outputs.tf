@@ -34,23 +34,18 @@ output "k3s_token" {
   sensitive   = true
 }
 
-output "ssh_command_db" {
-  description = "SSH command to connect to DB node"
-  value       = var.ssh_public_key != "" ? "ssh -i <private-key> ec2-user@${aws_instance.db.public_ip}" : "Use SSM: aws ssm start-session --target ${aws_instance.db.id}"
+output "ssh_commands" {
+  description = "SSH commands to connect to each node"
+  value = {
+    db     = "ssh -i .ssh/id_rsa ec2-user@${aws_instance.db.public_ip}"
+    stream = "ssh -i .ssh/id_rsa ec2-user@${aws_instance.stream.public_ip}"
+    client = "ssh -i .ssh/id_rsa ec2-user@${aws_instance.client.public_ip}"
+  }
 }
 
 output "kubeconfig_command" {
   description = "Command to get kubeconfig from server"
-  value       = "ssh ec2-user@${aws_instance.db.public_ip} 'cat /tmp/kubeconfig-external.yaml' > kubeconfig.yaml"
-}
-
-output "ssm_session_commands" {
-  description = "SSM session commands for each node"
-  value = {
-    db     = "aws ssm start-session --target ${aws_instance.db.id}"
-    stream = "aws ssm start-session --target ${aws_instance.stream.id}"
-    client = "aws ssm start-session --target ${aws_instance.client.id}"
-  }
+  value       = "ssh -i .ssh/id_rsa ec2-user@${aws_instance.db.public_ip} 'cat /tmp/kubeconfig-external.yaml' > kubeconfig.yaml"
 }
 
 output "availability_zone" {

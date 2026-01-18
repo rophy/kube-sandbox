@@ -46,12 +46,6 @@ variable "use_spot_instances" {
   default     = false
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for EC2 access (optional)"
-  type        = string
-  default     = ""
-}
-
 variable "allowed_ssh_cidr" {
   description = "CIDR block allowed for SSH access"
   type        = string

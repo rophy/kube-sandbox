@@ -25,8 +25,8 @@ down: ## Destroy K3s cluster and clean up
 		jq -r '.[]' | xargs -r -I{} aws ec2 delete-volume --volume-id {} 2>/dev/null || true
 	@echo "Cleanup complete"
 
-init: ## Run terraform init
-	cd terraform && terraform init
+init: ## Initialize project (terraform init + generate SSH key)
+	./scripts/init.sh
 
 kubeconfig: ## Fetch kubeconfig from K3s cluster
 	./scripts/fetch-kubeconfig.sh

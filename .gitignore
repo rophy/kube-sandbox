@@ -5,3 +5,4 @@
 .terraform.lock.hcl
 kubeconfig.yaml
 .ec2-ip
+.ssh/
