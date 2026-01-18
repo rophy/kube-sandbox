@@ -34,14 +34,21 @@ echo "K3s server IP: $DB_IP"
 
 # Wait for nginx proxy to be ready (K3s API via nginx TLS termination)
 echo "Waiting for K3s API (via nginx on port 16443) to be ready..."
+API_READY=false
 for i in {1..60}; do
-    if curl -sk "https://${DB_IP}:16443" >/dev/null 2>&1; then
+    if curl -sk --connect-timeout 3 "https://${DB_IP}:16443" >/dev/null 2>&1; then
         echo "K3s API (nginx) is responding"
+        API_READY=true
         break
     fi
     echo "Attempt $i/60 - waiting..."
-    sleep 10
+    sleep 5
 done
+
+if [ "$API_READY" != "true" ]; then
+    echo "ERROR: K3s API did not become ready in time"
+    exit 1
+fi
 
 # Fetch kubeconfig via SSH
 echo "Fetching kubeconfig via SSH..."
