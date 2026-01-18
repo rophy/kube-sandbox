@@ -1,13 +1,11 @@
-# Multi-stage build for minimal Go binaries
+# API image for check Lambda and K8s status server
 #
-# Produces two binaries:
-# - check: Lambda handler for idle detection
-# - api: HTTP server with /status endpoint
+# Single image with both binaries. MODE env var selects which to run:
+# - MODE=lambda (default): runs check binary for Lambda
+# - MODE=server: runs api binary for K8s
 #
 # Build: docker build -f Dockerfile.api -t kube-sandbox-api .
-# Size: ~15-20MB
 
-# Stage 1: Build
 FROM golang:1.23-alpine AS builder
 
 WORKDIR /build
@@ -20,24 +18,23 @@ COPY go.mod ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
-# Download dependencies and build
+# Build both binaries
 RUN go mod tidy && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o check ./cmd/check && \
     CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
 
-# Stage 2: Lambda runtime image
-FROM public.ecr.aws/lambda/provided:al2023 AS lambda
+# Final image based on Lambda runtime
+FROM public.ecr.aws/lambda/provided:al2023
 
-COPY --from=builder /build/check /var/runtime/bootstrap
+# Copy both binaries
+COPY --from=builder /build/check /var/runtime/check
+COPY --from=builder /build/api /var/runtime/api
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
-# Lambda uses bootstrap as entrypoint automatically
+# Entrypoint script to select binary based on MODE
+RUN echo '#!/bin/sh' > /var/runtime/bootstrap && \
+    echo 'if [ "$MODE" = "server" ]; then exec /var/runtime/api; else exec /var/runtime/check; fi' >> /var/runtime/bootstrap && \
+    chmod +x /var/runtime/bootstrap
 
-# Stage 3: Minimal API server image
-FROM scratch AS api
-
-COPY --from=builder /build/api /api
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-
-EXPOSE 8080
-ENTRYPOINT ["/api"]
+# Default to Lambda mode
+ENV MODE=lambda

@@ -22,11 +22,13 @@ spec:
     spec:
       containers:
         - name: api
-          image: kube-sandbox-api:latest
+          image: 513129860998.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-api:0.9.0
           ports:
             - containerPort: 8080
               name: http
           env:
+            - name: MODE
+              value: "server"
             - name: PORT
               value: "8080"
             - name: IDLE_THRESHOLD_MINUTES
