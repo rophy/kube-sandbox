@@ -229,7 +229,9 @@ cat > /usr/local/bin/publish-metrics.sh << 'PUBLISH_METRICS'
 LOG_FILE="/var/log/nginx/k8s-access.log"
 NAMESPACE="KubeSandbox"
 METRIC_NAME="KubeApiRequests"
-REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
+# IMDSv2 requires token-based access
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
 
 # Count successful requests (status 200 with valid client cert) in last 5 minutes
 CUTOFF=$(date -d "-5 minutes" '+%d/%b/%Y:%H:%M')
