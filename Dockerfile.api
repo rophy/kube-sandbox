@@ -1,0 +1,43 @@
+# Multi-stage build for minimal Go binaries
+#
+# Produces two binaries:
+# - check: Lambda handler for idle detection
+# - api: HTTP server with /status endpoint
+#
+# Build: docker build -f Dockerfile.api -t kube-sandbox-api .
+# Size: ~15-20MB
+
+# Stage 1: Build
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /build
+
+# Install ca-certificates for HTTPS calls
+RUN apk add --no-cache ca-certificates
+
+# Copy go mod and source
+COPY go.mod ./
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+
+# Download dependencies and build
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o check ./cmd/check && \
+    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o api ./cmd/api
+
+# Stage 2: Lambda runtime image
+FROM public.ecr.aws/lambda/provided:al2023 AS lambda
+
+COPY --from=builder /build/check /var/runtime/bootstrap
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Lambda uses bootstrap as entrypoint automatically
+
+# Stage 3: Minimal API server image
+FROM scratch AS api
+
+COPY --from=builder /build/api /api
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+EXPOSE 8080
+ENTRYPOINT ["/api"]

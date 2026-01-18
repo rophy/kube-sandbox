@@ -32,14 +32,10 @@ resource "aws_lambda_function" "check" {
   function_name = "kube-sandbox-check"
   description   = "Check cluster activity metrics, trigger destroy if idle"
   package_type  = "Image"
-  image_uri     = var.lambda_image_uri
+  image_uri     = var.lambda_api_image_uri
   timeout       = 60
   memory_size   = 256
   role          = aws_iam_role.lambda.arn
-
-  image_config {
-    command = ["check.handler"]
-  }
 
   environment {
     variables = merge(local.common_env, {
@@ -83,7 +79,7 @@ resource "aws_lambda_function" "destroy" {
   function_name = "kube-sandbox-destroy"
   description   = "Destroy cluster with terraform"
   package_type  = "Image"
-  image_uri     = var.lambda_image_uri
+  image_uri     = var.lambda_tf_image_uri
   timeout       = 900 # 15 minutes for terraform destroy
   memory_size   = 512
   role          = aws_iam_role.lambda.arn
@@ -92,12 +88,10 @@ resource "aws_lambda_function" "destroy" {
     size = 1024 # 1GB for terraform providers
   }
 
-  image_config {
-    command = ["destroy.handler"]
-  }
-
   environment {
-    variables = local.common_env
+    variables = merge(local.common_env, {
+      TF_ACTION = "destroy"
+    })
   }
 
   tags = {
@@ -112,7 +106,7 @@ resource "aws_lambda_function" "apply" {
   function_name = "kube-sandbox-apply"
   description   = "Create cluster with terraform"
   package_type  = "Image"
-  image_uri     = var.lambda_image_uri
+  image_uri     = var.lambda_tf_image_uri
   timeout       = 900 # 15 minutes for terraform apply
   memory_size   = 512
   role          = aws_iam_role.lambda.arn
@@ -121,12 +115,10 @@ resource "aws_lambda_function" "apply" {
     size = 1024
   }
 
-  image_config {
-    command = ["apply.handler"]
-  }
-
   environment {
-    variables = local.common_env
+    variables = merge(local.common_env, {
+      TF_ACTION = "apply"
+    })
   }
 
   tags = {

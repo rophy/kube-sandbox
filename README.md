@@ -68,38 +68,45 @@ This ensures you won't forget to destroy the cluster and accumulate unexpected c
 # Create S3 bucket for Terraform state
 aws s3 mb s3://kube-sandbox-YOUR_ACCOUNT_ID --region ap-east-2
 
-# Create ECR repository for Lambda
-aws ecr create-repository --repository-name kube-sandbox-lambda --region ap-east-2
+# Create ECR repositories for Lambda images
+aws ecr create-repository --repository-name kube-sandbox-api --region ap-east-2
+aws ecr create-repository --repository-name kube-sandbox-tf --region ap-east-2
 
 # Configure backend
 cp terraform/backend.tfvars.example terraform/backend.tfvars
 # Edit with your bucket name
 ```
 
-### 2. Build and Push Lambda Image
+### 2. Build and Push Lambda Images
 
 ```bash
 # Set variables
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 AWS_REGION=ap-east-2
+ECR=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # Login to ECR
 aws ecr get-login-password --region $AWS_REGION | \
-  docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+  docker login --username AWS --password-stdin $ECR
 
-# Build and push
-docker build -f Dockerfile.lambda -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:latest .
-docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:latest
+# Build and push API image (check Lambda + status server)
+docker build -f Dockerfile.api --target lambda -t $ECR/kube-sandbox-api:latest .
+docker push $ECR/kube-sandbox-api:latest
+
+# Build and push Terraform image (apply/destroy Lambdas - same image, different TF_ACTION env var)
+docker build -f Dockerfile.tf -t $ECR/kube-sandbox-tf:latest .
+docker push $ECR/kube-sandbox-tf:latest
 ```
 
 ### 3. Configure Terraform
 
 Create `terraform/infra/terraform.tfvars`:
 ```hcl
-lambda_image_uri    = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:latest"
-github_repo_url     = "https://github.com/YOUR_USER/kube-sandbox.git"
-tf_state_bucket     = "kube-sandbox-YOUR_ACCOUNT_ID"
-enable_auto_destroy = true
+lambda_api_image_uri = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-api:latest"
+lambda_tf_image_uri  = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-tf:latest"
+github_repo_url      = "https://github.com/YOUR_USER/kube-sandbox.git"
+tf_state_bucket      = "kube-sandbox-YOUR_ACCOUNT_ID"
+enable_auto_destroy  = true
 ```
 
 Create `terraform/cluster/terraform.tfvars` (optional, to override defaults):

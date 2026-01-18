@@ -102,7 +102,7 @@ resource "aws_iam_role_policy" "ebs_csi" {
   })
 }
 
-# CloudWatch metrics permission for publishing activity metrics
+# CloudWatch metrics permission for publishing and reading activity metrics
 resource "aws_iam_role_policy" "cloudwatch_metrics" {
   name = "k3s-cloudwatch-metrics-policy"
   role = aws_iam_role.ec2.id
@@ -111,8 +111,16 @@ resource "aws_iam_role_policy" "cloudwatch_metrics" {
     Version = "2012-10-17"
     Statement = [
       {
+        Effect = "Allow"
+        Action = [
+          "cloudwatch:PutMetricData",
+          "cloudwatch:GetMetricStatistics"
+        ]
+        Resource = "*"
+      },
+      {
         Effect   = "Allow"
-        Action   = ["cloudwatch:PutMetricData"]
+        Action   = ["ec2:DescribeVpcs"]
         Resource = "*"
       }
     ]
