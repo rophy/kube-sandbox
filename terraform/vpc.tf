@@ -106,11 +106,14 @@ resource "aws_iam_role_policy" "flow_logs" {
 
 resource "aws_flow_log" "main" {
   vpc_id                   = aws_vpc.main.id
-  traffic_type             = "ALL"
+  traffic_type             = "ACCEPT"
   log_destination_type     = "cloud-watch-logs"
   log_destination          = aws_cloudwatch_log_group.flow_logs.arn
   iam_role_arn             = aws_iam_role.flow_logs.arn
   max_aggregation_interval = 60
+
+  # Note: Port-based filtering not yet supported in Terraform aws_flow_log.
+  # Filtering by port 6443 happens at query time in Lambda.
 
   tags = {
     Name = "kube-sandbox-flow-logs"
