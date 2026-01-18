@@ -51,3 +51,15 @@ variable "allowed_ssh_cidr" {
   type        = string
   default     = "0.0.0.0/0"
 }
+
+variable "idle_timeout_minutes" {
+  description = "Minutes of idle before auto-destroy"
+  type        = number
+  default     = 30
+}
+
+variable "enable_auto_destroy" {
+  description = "Enable auto-destroy on idle. When false, Lambda logs idle detection but doesn't trigger destroy (dry-run mode for testing)."
+  type        = bool
+  default     = false
+}

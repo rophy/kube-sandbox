@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.0"
 
   backend "s3" {
-    bucket       = "rophy-tf-states"
+    # bucket provided via -backend-config
     key          = "kube-sandbox/terraform.tfstate"
     region       = "ap-east-2"
     encrypt      = true
@@ -13,6 +13,10 @@ terraform {
     aws = {
       source  = "hashicorp/aws"
       version = "~> 5.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.0"
     }
     random = {
       source  = "hashicorp/random"

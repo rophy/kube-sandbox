@@ -20,11 +20,25 @@ else
     echo "SSH key already exists: $SSH_KEY"
 fi
 
-# Run terraform init
+# Check for backend.tfvars
+BACKEND_CONFIG="${PROJECT_DIR}/terraform/backend.tfvars"
+if [ ! -f "$BACKEND_CONFIG" ]; then
+    echo ""
+    echo "ERROR: terraform/backend.tfvars not found."
+    echo ""
+    echo "Please create it with your S3 bucket name:"
+    echo ""
+    echo "  cp terraform/backend.tfvars.example terraform/backend.tfvars"
+    echo "  # Then edit terraform/backend.tfvars with your bucket name"
+    echo ""
+    exit 1
+fi
+
+# Run terraform init with backend config
 echo ""
 echo "Running terraform init..."
 cd "${PROJECT_DIR}/terraform"
-terraform init
+terraform init -backend-config=backend.tfvars
 
 echo ""
 echo "=== Initialization complete ==="

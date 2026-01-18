@@ -3,6 +3,9 @@
 *.tfstate.*
 .terraform/
 .terraform.lock.hcl
+terraform.tfvars
+backend.tfvars
 kubeconfig.yaml
 .ec2-ip
 .ssh/
+lambda/**/*.zip
