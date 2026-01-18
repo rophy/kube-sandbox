@@ -30,7 +30,7 @@ Disposable Kubernetes cluster on AWS for testing and experimentation. Uses K3s f
 │  │ Data Plane (on-demand, pay per use)                             │   │
 │  │                                                                 │   │
 │  │  ┌───────────┐    ┌───────────┐    ┌───────────┐               │   │
-│  │  │  K3s DB   │    │ K3s Stream│    │ K3s Client│               │   │
+│  │  │  master   │    │  worker1  │    │  worker2  │               │   │
 │  │  │  (server) │    │  (agent)  │    │  (agent)  │               │   │
 │  │  └───────────┘    └───────────┘    └───────────┘               │   │
 │  │                                                                 │   │
@@ -149,13 +149,11 @@ make down
 
 ## Node Configuration
 
-Each node has labels and taints for workload isolation:
-
-| Node | Role | Label | Taint |
-|------|------|-------|-------|
-| DB | K3s server | `workload=db` | None (control plane) |
-| Stream | K3s agent | `workload=stream` | `workload=stream:NoSchedule` |
-| Client | K3s agent | `workload=client` | `workload=client:NoSchedule` |
+| Node | Role | Instance Type | Label |
+|------|------|---------------|-------|
+| master | K3s server | t3.small | `role=master` |
+| worker1 | K3s agent | t3.large | `role=worker1` |
+| worker2 | K3s agent | t3.large | `role=worker2` |
 
 ## Storage Classes
 

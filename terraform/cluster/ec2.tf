@@ -1,25 +1,25 @@
 # Elastic IPs for stable public addresses
-resource "aws_eip" "db" {
+resource "aws_eip" "master" {
   domain = "vpc"
 
   tags = {
-    Name = "k3s-db-eip"
+    Name = "k3s-master-eip"
   }
 }
 
-resource "aws_eip" "stream" {
+resource "aws_eip" "worker1" {
   domain = "vpc"
 
   tags = {
-    Name = "k3s-stream-eip"
+    Name = "k3s-worker1-eip"
   }
 }
 
-resource "aws_eip" "client" {
+resource "aws_eip" "worker2" {
   domain = "vpc"
 
   tags = {
-    Name = "k3s-client-eip"
+    Name = "k3s-worker2-eip"
   }
 }
 
@@ -116,9 +116,9 @@ resource "aws_iam_instance_profile" "ec2" {
   role = aws_iam_role.ec2.name
 }
 
-# User data for K3s server (DB node)
+# User data for K3s server (master node)
 locals {
-  k3s_server_public_ip = aws_eip.db.public_ip
+  k3s_server_public_ip = aws_eip.master.public_ip
 
   k3s_server_userdata = <<-EOF
 #!/bin/bash
@@ -157,7 +157,7 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -s - \
   --disable traefik \
   --disable servicelb \
   --disable local-storage \
-  --node-label "workload=db" \
+  --node-label "role=master" \
   --tls-san "$PUBLIC_IP" \
   --write-kubeconfig-mode 644
 
@@ -259,7 +259,7 @@ chmod 644 /tmp/kubeconfig-external.yaml
 echo "K3s server ready with nginx proxy on port 16443"
 EOF
 
-  k3s_agent_stream_userdata = <<-EOF
+  k3s_agent_worker1_userdata = <<-EOF
 #!/bin/bash
 set -e
 
@@ -278,7 +278,7 @@ mirrors:
       - "http://localhost:30500"
 REGISTRIES
 
-SERVER_IP="${aws_instance.db.private_ip}"
+SERVER_IP="${aws_instance.master.private_ip}"
 until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
   echo "Waiting for K3s server..."
   sleep 10
@@ -287,13 +287,12 @@ done
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
   --server "https://$SERVER_IP:6443" \
   --token "${random_password.k3s_token.result}" \
-  --node-label "workload=stream" \
-  --node-taint "workload=stream:NoSchedule"
+  --node-label "role=worker1"
 
-echo "K3s agent (stream) ready"
+echo "K3s agent (worker1) ready"
 EOF
 
-  k3s_agent_client_userdata = <<-EOF
+  k3s_agent_worker2_userdata = <<-EOF
 #!/bin/bash
 set -e
 
@@ -312,7 +311,7 @@ mirrors:
       - "http://localhost:30500"
 REGISTRIES
 
-SERVER_IP="${aws_instance.db.private_ip}"
+SERVER_IP="${aws_instance.master.private_ip}"
 until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
   echo "Waiting for K3s server..."
   sleep 10
@@ -321,17 +320,16 @@ done
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
   --server "https://$SERVER_IP:6443" \
   --token "${random_password.k3s_token.result}" \
-  --node-label "workload=client" \
-  --node-taint "workload=client:NoSchedule"
+  --node-label "role=worker2"
 
-echo "K3s agent (client) ready"
+echo "K3s agent (worker2) ready"
 EOF
 }
 
-# DB Node - K3s Server
-resource "aws_instance" "db" {
+# Master Node - K3s Server
+resource "aws_instance" "master" {
   ami                    = data.aws_ami.al2023.id
-  instance_type          = var.db_instance_type
+  instance_type          = var.master_instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
@@ -351,27 +349,26 @@ resource "aws_instance" "db" {
   }
 
   root_block_device {
-    volume_size = 50
+    volume_size = 30
     volume_type = "gp3"
   }
 
   tags = {
-    Name     = "k3s-db"
-    Workload = "db"
-    Role     = "server"
+    Name = "k3s-master"
+    Role = "server"
   }
 }
 
-# Stream Node - K3s Agent
-resource "aws_instance" "stream" {
+# Worker1 Node - K3s Agent
+resource "aws_instance" "worker1" {
   ami                    = data.aws_ami.al2023.id
-  instance_type          = var.stream_instance_type
+  instance_type          = var.worker1_instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
 
-  user_data = local.k3s_agent_stream_userdata
+  user_data = local.k3s_agent_worker1_userdata
 
   dynamic "instance_market_options" {
     for_each = var.use_spot_instances ? [1] : []
@@ -389,25 +386,24 @@ resource "aws_instance" "stream" {
     volume_type = "gp3"
   }
 
-  depends_on = [aws_instance.db]
+  depends_on = [aws_instance.master]
 
   tags = {
-    Name     = "k3s-stream"
-    Workload = "stream"
-    Role     = "agent"
+    Name = "k3s-worker1"
+    Role = "agent"
   }
 }
 
-# Client Node - K3s Agent
-resource "aws_instance" "client" {
+# Worker2 Node - K3s Agent
+resource "aws_instance" "worker2" {
   ami                    = data.aws_ami.al2023.id
-  instance_type          = var.client_instance_type
+  instance_type          = var.worker2_instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
 
-  user_data = local.k3s_agent_client_userdata
+  user_data = local.k3s_agent_worker2_userdata
 
   dynamic "instance_market_options" {
     for_each = var.use_spot_instances ? [1] : []
@@ -425,27 +421,26 @@ resource "aws_instance" "client" {
     volume_type = "gp3"
   }
 
-  depends_on = [aws_instance.db]
+  depends_on = [aws_instance.master]
 
   tags = {
-    Name     = "k3s-client"
-    Workload = "client"
-    Role     = "agent"
+    Name = "k3s-worker2"
+    Role = "agent"
   }
 }
 
 # Associate Elastic IPs with instances
-resource "aws_eip_association" "db" {
-  instance_id   = aws_instance.db.id
-  allocation_id = aws_eip.db.id
+resource "aws_eip_association" "master" {
+  instance_id   = aws_instance.master.id
+  allocation_id = aws_eip.master.id
 }
 
-resource "aws_eip_association" "stream" {
-  instance_id   = aws_instance.stream.id
-  allocation_id = aws_eip.stream.id
+resource "aws_eip_association" "worker1" {
+  instance_id   = aws_instance.worker1.id
+  allocation_id = aws_eip.worker1.id
 }
 
-resource "aws_eip_association" "client" {
-  instance_id   = aws_instance.client.id
-  allocation_id = aws_eip.client.id
+resource "aws_eip_association" "worker2" {
+  instance_id   = aws_instance.worker2.id
+  allocation_id = aws_eip.worker2.id
 }

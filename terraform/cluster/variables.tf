@@ -22,22 +22,22 @@ variable "subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
-variable "db_instance_type" {
-  description = "Instance type for DB node (K3s server)"
+variable "master_instance_type" {
+  description = "Instance type for master node (K3s server)"
   type        = string
-  default     = "m6i.2xlarge"
+  default     = "t3.small"
 }
 
-variable "stream_instance_type" {
-  description = "Instance type for Stream node (K3s agent)"
+variable "worker1_instance_type" {
+  description = "Instance type for worker1 node (K3s agent)"
   type        = string
-  default     = "m6i.2xlarge"
+  default     = "t3.large"
 }
 
-variable "client_instance_type" {
-  description = "Instance type for Client node (K3s agent)"
+variable "worker2_instance_type" {
+  description = "Instance type for worker2 node (K3s agent)"
   type        = string
-  default     = "m6i.2xlarge"
+  default     = "t3.large"
 }
 
 variable "use_spot_instances" {

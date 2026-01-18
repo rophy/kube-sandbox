@@ -21,22 +21,22 @@ echo "=== Fetching kubeconfig from K3s server ==="
 
 # Get the server IP from terraform output
 cd "$TERRAFORM_DIR"
-DB_IP=$(terraform output -raw db_node_public_ip 2>/dev/null || true)
+MASTER_IP=$(terraform output -raw master_public_ip 2>/dev/null || true)
 
 # Check if we got a valid IP (not empty and not terraform warning text)
-if [ -z "$DB_IP" ] || ! echo "$DB_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-    echo "ERROR: Could not get DB node IP. Is the cluster deployed?"
+if [ -z "$MASTER_IP" ] || ! echo "$MASTER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "ERROR: Could not get master node IP. Is the cluster deployed?"
     echo "Run 'make up' to create the cluster first."
     exit 1
 fi
 
-echo "K3s server IP: $DB_IP"
+echo "K3s server IP: $MASTER_IP"
 
 # Wait for nginx proxy to be ready (K3s API via nginx TLS termination)
 echo "Waiting for K3s API (via nginx on port 16443) to be ready..."
 API_READY=false
 for i in {1..60}; do
-    if curl -sk --connect-timeout 3 "https://${DB_IP}:16443" >/dev/null 2>&1; then
+    if curl -sk --connect-timeout 3 "https://${MASTER_IP}:16443" >/dev/null 2>&1; then
         echo "K3s API (nginx) is responding"
         API_READY=true
         break
@@ -53,7 +53,7 @@ fi
 # Fetch kubeconfig via SSH
 echo "Fetching kubeconfig via SSH..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-    ec2-user@"$DB_IP" "cat /tmp/kubeconfig-external.yaml" > "$OUTPUT_FILE"
+    ec2-user@"$MASTER_IP" "cat /tmp/kubeconfig-external.yaml" > "$OUTPUT_FILE"
 
 if [ -s "$OUTPUT_FILE" ]; then
     # Fix file permissions to avoid kubectl warnings
@@ -62,7 +62,7 @@ if [ -s "$OUTPUT_FILE" ]; then
     # Fix empty server IP in kubeconfig
     if grep -q "server: https://:16443" "$OUTPUT_FILE"; then
         echo "Fixing server IP in kubeconfig..."
-        sed -i "s|server: https://:16443|server: https://${DB_IP}:16443|" "$OUTPUT_FILE"
+        sed -i "s|server: https://:16443|server: https://${MASTER_IP}:16443|" "$OUTPUT_FILE"
     fi
 
     # Rename context/cluster/user from "default" to "kube-sandbox"
