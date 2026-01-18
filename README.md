@@ -1,245 +1,172 @@
 # kube-sandbox
 
-Disposable Kubernetes cluster on AWS with minimal cost using K3s and Terraform.
+Disposable Kubernetes cluster on AWS for testing and experimentation. Uses K3s for lightweight Kubernetes and includes automatic idle detection to prevent runaway costs.
+
+## Features
+
+- **3-node K3s cluster** with dedicated workload labels (db, stream, client)
+- **Auto-destroy** - cluster automatically destroys itself after 30 minutes of inactivity
+- **Elastic IPs** - stable public IPs survive instance replacements
+- **EBS CSI driver** - dynamic volume provisioning with gp3 storage
+- **mTLS API access** - secure external kubectl access via nginx proxy
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         VPC (10.0.0.0/16)                   │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │              Public Subnet (10.0.1.0/24)              │  │
-│  │                                                       │  │
-│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐   │  │
-│  │  │   Node 1    │  │   Node 2    │  │   Node 3    │   │  │
-│  │  │ m6i.2xlarge │  │ m6i.2xlarge │  │ m6i.2xlarge │   │  │
-│  │  │             │  │             │  │             │   │  │
-│  │  │ K3s Server  │  │ K3s Agent   │  │ K3s Agent   │   │  │
-│  │  └─────────────┘  └─────────────┘  └─────────────┘   │  │
-│  │     workload=db    workload=stream  workload=client  │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              AWS                                        │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ Control Plane (always on, ~$0/month)                            │   │
+│  │                                                                 │   │
+│  │  EventBridge ──(5min)──► Check Lambda ──(idle)──► Destroy Lambda│   │
+│  │                              │                                  │   │
+│  │                              ▼                                  │   │
+│  │                      CloudWatch Metrics                         │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                 ▲                                       │
+│                                 │ publishes metrics                     │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ Data Plane (on-demand, pay per use)                             │   │
+│  │                                                                 │   │
+│  │  ┌───────────┐    ┌───────────┐    ┌───────────┐               │   │
+│  │  │  K3s DB   │    │ K3s Stream│    │ K3s Client│               │   │
+│  │  │  (server) │    │  (agent)  │    │  (agent)  │               │   │
+│  │  └───────────┘    └───────────┘    └───────────┘               │   │
+│  │                                                                 │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
+
+## Auto-Destroy
+
+The cluster monitors K8s API activity and automatically destroys itself when idle:
+
+1. **EC2 cronjob** publishes API request count to CloudWatch every 5 minutes
+2. **Check Lambda** (EventBridge scheduled) checks metrics every 5 minutes
+3. If no API activity for 30 minutes → **Destroy Lambda** runs `terraform destroy`
+
+This ensures you won't forget to destroy the cluster and accumulate unexpected charges.
+
+**Safety features:**
+- Missing metrics (EC2 stuck) is treated as idle → still gets destroyed
+- Errors checking metrics → safe default, no destroy
+- `enable_auto_destroy = false` disables destruction (dry-run mode)
 
 ## Prerequisites
 
 - Docker and Docker Compose
-- AWS credentials (via `~/.aws` or environment variables)
-- S3 bucket for Terraform state (see below)
+- AWS credentials with EC2, VPC, IAM, Lambda, CloudWatch, S3 permissions
+- S3 bucket for Terraform state
+- ECR repository for Lambda image
 
-## AWS Setup
+## Quick Start
 
-### S3 Backend
-
-Terraform uses an S3 bucket to store state. Create the bucket and configure `backend.tfvars`:
+### 1. One-time Setup
 
 ```bash
-# Create bucket (one-time)
+# Create S3 bucket for Terraform state
 aws s3 mb s3://kube-sandbox-YOUR_ACCOUNT_ID --region ap-east-2
+
+# Create ECR repository for Lambda
+aws ecr create-repository --repository-name kube-sandbox-lambda --region ap-east-2
 
 # Configure backend
 cp terraform/backend.tfvars.example terraform/backend.tfvars
-# Edit terraform/backend.tfvars with your bucket name
+# Edit with your bucket name
 ```
 
-### ECR Repository (for Auto-Destroy Lambda)
-
-The auto-destroy feature uses a Lambda container image. Push it to ECR:
+### 2. Build and Push Lambda Image
 
 ```bash
 # Set variables
 AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 AWS_REGION=ap-east-2
 
-# Create ECR repository (one-time)
-aws ecr create-repository --repository-name kube-sandbox-lambda --region $AWS_REGION
-
 # Login to ECR
 aws ecr get-login-password --region $AWS_REGION | \
   docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
-# Build and push (from project root)
-docker build -f Dockerfile.lambda -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:0.1.0 .
-docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:0.1.0
+# Build and push
+docker build -f Dockerfile.lambda -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:latest .
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:latest
 ```
 
-Then add to `terraform/terraform.tfvars`:
+### 3. Configure Terraform
 
+Create `terraform/infra/terraform.tfvars`:
 ```hcl
-lambda_image_uri = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:0.1.0"
+lambda_image_uri    = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:latest"
+github_repo_url     = "https://github.com/YOUR_USER/kube-sandbox.git"
+tf_state_bucket     = "kube-sandbox-YOUR_ACCOUNT_ID"
+enable_auto_destroy = true
 ```
 
-### Required IAM Permissions
-
-Your AWS credentials need the following permissions:
-
-| Service | Permissions | Purpose |
-|---------|-------------|---------|
-| EC2 | Full access | Instances, AMIs, volumes, security groups, key pairs |
-| VPC | Full access | VPCs, subnets, internet gateways, route tables |
-| IAM | Limited | Create roles, instance profiles, policies |
-| S3 | Read/Write | Terraform state bucket access |
-
-Example IAM policy (attach to your user or role):
-
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Effect": "Allow",
-      "Action": [
-        "ec2:*",
-        "s3:GetObject",
-        "s3:PutObject",
-        "s3:DeleteObject",
-        "s3:ListBucket"
-      ],
-      "Resource": "*"
-    },
-    {
-      "Effect": "Allow",
-      "Action": [
-        "iam:CreateRole",
-        "iam:DeleteRole",
-        "iam:GetRole",
-        "iam:PassRole",
-        "iam:CreateInstanceProfile",
-        "iam:DeleteInstanceProfile",
-        "iam:GetInstanceProfile",
-        "iam:AddRoleToInstanceProfile",
-        "iam:RemoveRoleFromInstanceProfile",
-        "iam:AttachRolePolicy",
-        "iam:DetachRolePolicy",
-        "iam:PutRolePolicy",
-        "iam:DeleteRolePolicy",
-        "iam:GetRolePolicy",
-        "iam:ListAttachedRolePolicies",
-        "iam:ListRolePolicies",
-        "iam:ListInstanceProfilesForRole",
-        "iam:TagRole",
-        "iam:TagInstanceProfile"
-      ],
-      "Resource": "*"
-    }
-  ]
-}
+Create `terraform/cluster/terraform.tfvars` (optional, to override defaults):
+```hcl
+db_instance_type     = "t3.large"
+stream_instance_type = "t3.large"
+client_instance_type = "t3.large"
 ```
 
-For simpler setup, you can use AWS managed policies:
-- `AmazonEC2FullAccess`
-- `AmazonVPCFullAccess`
-- `IAMFullAccess` (or the limited policy above)
-- S3 access to your state bucket
-
-## Quick Start
-
-### 1. Enter Dev Container
+### 4. Deploy
 
 ```bash
+# Enter dev container
 make shell
+
+# Initialize Terraform (first time only)
+make init
+
+# Deploy control plane (Lambda functions)
+cd terraform/infra && terraform apply
+
+# Create cluster
+make up
 ```
 
-### 2. Create Cluster
+### 5. Use the Cluster
 
 ```bash
-make init    # First time only - initializes Terraform
-make up      # Creates cluster and fetches kubeconfig
+kubectl get nodes
 ```
 
-### 3. Verify Cluster
-
-```bash
-kubectl get nodes -o wide
-```
-
-### 4. Destroy When Done
+### 6. Destroy (or let auto-destroy handle it)
 
 ```bash
 make down
 ```
 
-This destroys all AWS resources and cleans up any orphaned EBS volumes created by the CSI driver.
-
 ## Make Targets
 
 | Command | Description |
 |---------|-------------|
-| `make shell` | Start dev container and open shell |
-| `make init` | Initialize Terraform (first time only) |
-| `make up` | Create K3s cluster and fetch kubeconfig |
+| `make shell` | Enter dev container |
+| `make init` | Initialize Terraform |
+| `make up` | Create cluster and fetch kubeconfig |
 | `make down` | Destroy cluster and clean up EBS volumes |
 | `make kubeconfig` | Fetch kubeconfig from existing cluster |
-| `make help` | Show all available targets |
 
-## Cost
+## Node Configuration
 
-Uses on-demand instances by default. Spot instances can be enabled via `use_spot_instances = true` in terraform.tfvars.
+Each node has labels and taints for workload isolation:
 
-| Node | Instance Type | vCPU | Memory | Role |
-|------|---------------|------|--------|------|
-| Node 1 | m6i.2xlarge | 8 | 32 GiB | K3s Server |
-| Node 2 | m6i.2xlarge | 8 | 32 GiB | K3s Agent |
-| Node 3 | m6i.2xlarge | 8 | 32 GiB | K3s Agent |
+| Node | Role | Label | Taint |
+|------|------|-------|-------|
+| DB | K3s server | `workload=db` | None (control plane) |
+| Stream | K3s agent | `workload=stream` | `workload=stream:NoSchedule` |
+| Client | K3s agent | `workload=client` | `workload=client:NoSchedule` |
 
-## Node Labels and Taints
-
-Each node has a label and taint for workload isolation:
-
-| Node | Label | Taint |
-|------|-------|-------|
-| Node 1 | `workload=db` | `workload=db:NoSchedule` |
-| Node 2 | `workload=stream` | `workload=stream:NoSchedule` |
-| Node 3 | `workload=client` | `workload=client:NoSchedule` |
-
-To schedule pods on specific nodes:
-
-```yaml
-spec:
-  nodeSelector:
-    workload: db
-  tolerations:
-    - key: "workload"
-      operator: "Equal"
-      value: "db"
-      effect: "NoSchedule"
-```
-
-## EBS CSI Driver
-
-The cluster includes the AWS EBS CSI driver for dynamic volume provisioning, automatically deployed on startup.
-
-### Storage Classes
+## Storage Classes
 
 | Name | Description |
 |------|-------------|
 | `ebs-gp3` (default) | Standard gp3 volumes |
-| `ebs-gp3-fast` | gp3 with 4000 IOPS, 250 MB/s throughput |
+| `ebs-gp3-fast` | gp3 with 4000 IOPS, 250 MB/s |
 
-## Dev Container
+## Cost Optimization
 
-The dev container includes:
-- Terraform
-- AWS CLI
-- kubectl
-- Claude CLI
-
-KUBECONFIG is automatically configured inside the container.
-
-## Files Structure
-
-```
-.
-├── CLAUDE.md            # Claude AI instructions
-├── Dockerfile           # Dev container
-├── docker-compose.yaml
-├── Makefile
-├── terraform/
-│   ├── variables.tf     # Configurable variables
-│   ├── vpc.tf           # VPC, subnet, IGW
-│   ├── security.tf      # Security groups
-│   ├── ec2.tf           # EC2 instances with K3s
-│   └── outputs.tf       # Output values
-└── scripts/
-    └── fetch-kubeconfig.sh
-```
+- Control plane (Lambda + EventBridge) costs ~$0/month when idle
+- Cluster costs only when running (EC2 on-demand or spot)
+- Auto-destroy prevents forgotten clusters from accumulating charges
+- Use `use_spot_instances = true` for additional savings

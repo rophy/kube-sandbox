@@ -1,4 +1,4 @@
-.PHONY: help shell up down init kubeconfig build-devcontainer infra-up infra-down infra-init cluster-init
+.PHONY: help shell up down init kubeconfig build-devcontainer infra-up infra-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -11,9 +11,6 @@ build-devcontainer: ## Build the dev container image
 
 # ===== INFRA (Lambda, IAM - zero cost, deploy once) =====
 
-infra-init: ## Initialize infra terraform
-	cd terraform/infra && terraform init -backend-config=../backend.tfvars
-
 infra-up: ## Deploy infra (Lambda, IAM)
 	cd terraform/infra && terraform apply -auto-approve
 
@@ -21,9 +18,6 @@ infra-down: ## Destroy infra (Lambda, IAM)
 	cd terraform/infra && terraform destroy -auto-approve
 
 # ===== CLUSTER (VPC, EC2, K3s - costs money) =====
-
-cluster-init: ## Initialize cluster terraform
-	cd terraform/cluster && terraform init -backend-config=../backend.tfvars
 
 up: ## Create K3s cluster and fetch kubeconfig
 	cd terraform/cluster && timeout 180 terraform apply -auto-approve
