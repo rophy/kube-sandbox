@@ -94,6 +94,25 @@ resource "aws_iam_role_policy" "ebs_csi" {
   })
 }
 
+# Lambda invoke permission for auto-destroy trigger
+resource "aws_iam_role_policy" "lambda_invoke" {
+  name = "k3s-lambda-invoke-policy"
+  role = aws_iam_role.ec2.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "lambda:InvokeFunction"
+        ]
+        Resource = "arn:aws:lambda:*:*:function:kube-sandbox-idle-checker"
+      }
+    ]
+  })
+}
+
 resource "aws_iam_instance_profile" "ec2" {
   name = "k3s-perf-test-ec2-profile"
   role = aws_iam_role.ec2.name
@@ -109,7 +128,8 @@ locals {
 set -e
 
 # Install dependencies (curl-minimal already present on AL2023)
-dnf install -y jq
+dnf install -y jq cronie
+systemctl enable --now crond
 
 # Disable firewalld (K3s manages iptables)
 systemctl disable --now firewalld || true
@@ -157,11 +177,110 @@ curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="server" sh -s - \
 # Wait for K3s to be ready
 until kubectl get nodes; do sleep 5; done
 
-# Store kubeconfig with public IP for external access (PUBLIC_IP already set above)
-sed "s/127.0.0.1/$PUBLIC_IP/g" /etc/rancher/k3s/k3s.yaml > /tmp/kubeconfig-external.yaml
+# ===== NGINX SETUP FOR TLS TERMINATION =====
+
+# Install nginx
+dnf install -y nginx
+
+# Copy K3s certs for nginx
+mkdir -p /etc/nginx/ssl
+cp /var/lib/rancher/k3s/server/tls/serving-kube-apiserver.crt /etc/nginx/ssl/server.crt
+cp /var/lib/rancher/k3s/server/tls/serving-kube-apiserver.key /etc/nginx/ssl/server.key
+cp /var/lib/rancher/k3s/server/tls/client-ca.crt /etc/nginx/ssl/client-ca.crt
+cp /var/lib/rancher/k3s/server/tls/client-admin.crt /etc/nginx/ssl/client-admin.crt
+cp /var/lib/rancher/k3s/server/tls/client-admin.key /etc/nginx/ssl/client-admin.key
+chmod 600 /etc/nginx/ssl/*.key
+
+# Configure nginx for K8s API proxy with client cert validation
+cat > /etc/nginx/nginx.conf << 'NGINX_CONF'
+user nginx;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    log_format k8s '$remote_addr [$time_local] "$request" $status $body_bytes_sent $ssl_client_s_dn';
+
+    server {
+        listen 16443 ssl;
+
+        ssl_certificate /etc/nginx/ssl/server.crt;
+        ssl_certificate_key /etc/nginx/ssl/server.key;
+        ssl_client_certificate /etc/nginx/ssl/client-ca.crt;
+        ssl_verify_client on;
+
+        access_log /var/log/nginx/k8s-access.log k8s;
+
+        location / {
+            proxy_pass https://127.0.0.1:6443;
+            proxy_ssl_certificate /etc/nginx/ssl/client-admin.crt;
+            proxy_ssl_certificate_key /etc/nginx/ssl/client-admin.key;
+            proxy_ssl_verify off;
+
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+}
+NGINX_CONF
+
+systemctl enable --now nginx
+
+# ===== IDLE CHECK CRONJOB =====
+
+cat > /usr/local/bin/check-idle.sh << 'IDLE_CHECK'
+#!/bin/bash
+IDLE_MINUTES=$${IDLE_MINUTES:-${var.idle_timeout_minutes}}
+LOG_FILE="/var/log/nginx/k8s-access.log"
+LAMBDA_FUNCTION="kube-sandbox-idle-checker"
+
+# Get cutoff time for idle window
+CUTOFF=$(date -d "-$${IDLE_MINUTES} minutes" '+%d/%b/%Y:%H:%M')
+
+# Count successful requests (status 200, has client cert DN) in last N minutes
+RECENT_REQUESTS=$(awk -v cutoff="$${CUTOFF}" '
+  {
+    # Extract timestamp from log line (format: IP [dd/Mon/YYYY:HH:MM:SS +ZZZZ])
+    if (match($0, /\[([0-9]+\/[A-Za-z]+\/[0-9]+:[0-9]+:[0-9]+)/, ts)) {
+      timestamp = ts[1]
+      # Extract status code (after "HTTP/1.1" ")
+      if (match($0, /" ([0-9]+) /, st) && timestamp >= cutoff && st[1] == "200") {
+        # Check if there is a client DN (not just a dash at the end)
+        if (!match($0, / -$/)) {
+          count++
+        }
+      }
+    }
+  }
+  END { print count+0 }
+' "$LOG_FILE")
+
+echo "$(date): Checked idle status - $${RECENT_REQUESTS} requests in last $${IDLE_MINUTES} minutes"
+
+if [ "$${RECENT_REQUESTS}" -eq 0 ]; then
+    echo "Cluster idle for $${IDLE_MINUTES} minutes. Triggering destroy."
+    aws lambda invoke --function-name "$LAMBDA_FUNCTION" --region $(curl -s http://169.254.169.254/latest/meta-data/placement/region) /tmp/lambda-out.json
+    cat /tmp/lambda-out.json
+fi
+IDLE_CHECK
+
+chmod +x /usr/local/bin/check-idle.sh
+
+# Run every 5 minutes
+echo "*/5 * * * * root /usr/local/bin/check-idle.sh >> /var/log/idle-check.log 2>&1" > /etc/cron.d/idle-check
+
+# ===== KUBECONFIG FOR EXTERNAL ACCESS =====
+
+# Store kubeconfig with public IP and nginx port for external access
+sed -e "s/127.0.0.1/$PUBLIC_IP/g" -e "s/:6443/:16443/g" /etc/rancher/k3s/k3s.yaml > /tmp/kubeconfig-external.yaml
 chmod 644 /tmp/kubeconfig-external.yaml
 
-echo "K3s server ready"
+echo "K3s server ready with nginx proxy on port 16443"
 EOF
 
   k3s_agent_stream_userdata = <<-EOF
@@ -169,7 +288,8 @@ EOF
 set -e
 
 # Install dependencies (curl-minimal already present on AL2023)
-dnf install -y jq
+dnf install -y jq cronie
+systemctl enable --now crond
 
 # Disable firewalld
 systemctl disable --now firewalld || true
@@ -209,7 +329,8 @@ EOF
 set -e
 
 # Install dependencies (curl-minimal already present on AL2023)
-dnf install -y jq
+dnf install -y jq cronie
+systemctl enable --now crond
 
 # Disable firewalld
 systemctl disable --now firewalld || true

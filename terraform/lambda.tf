@@ -1,4 +1,4 @@
-# Lambda function for idle detection (container image based)
+# Lambda function for auto-destroy (triggered by EC2 cronjob when idle)
 
 locals {
   # Read bucket name from backend.tfvars for Lambda environment
@@ -6,21 +6,25 @@ locals {
 }
 
 # Lambda function (container image)
+# Triggered on-demand by EC2 cronjob when cluster is idle - no periodic schedule
 resource "aws_lambda_function" "idle_checker" {
   function_name = "kube-sandbox-idle-checker"
-  description   = "Checks for idle K8s cluster and runs terraform destroy"
+  description   = "Runs terraform destroy when triggered by EC2 idle detection"
   package_type  = "Image"
   image_uri     = var.lambda_image_uri
   timeout       = 900 # 15 minutes (Lambda max) for terraform destroy
   memory_size   = 512 # More memory for terraform operations
   role          = aws_iam_role.idle_checker.arn
 
+  ephemeral_storage {
+    size = 1024 # 1GB for terraform providers (AWS provider alone is ~400MB)
+  }
+
   environment {
     variables = {
-      LOG_GROUP_NAME       = aws_cloudwatch_log_group.flow_logs.name
-      IDLE_TIMEOUT_MINUTES = var.idle_timeout_minutes
-      TF_STATE_BUCKET      = local.backend_bucket
-      ENABLE_AUTO_DESTROY  = var.enable_auto_destroy ? "true" : "false"
+      GITHUB_REPO_URL     = var.github_repo_url
+      TF_STATE_BUCKET     = local.backend_bucket
+      ENABLE_AUTO_DESTROY = var.enable_auto_destroy ? "true" : "false"
     }
   }
 
@@ -33,27 +37,4 @@ resource "aws_lambda_function" "idle_checker" {
 resource "aws_cloudwatch_log_group" "idle_checker" {
   name              = "/aws/lambda/kube-sandbox-idle-checker"
   retention_in_days = 7
-}
-
-# EventBridge rule to run every 5 minutes
-resource "aws_cloudwatch_event_rule" "idle_checker" {
-  name                = "kube-sandbox-idle-checker"
-  description         = "Triggers idle checker every 5 minutes"
-  schedule_expression = "rate(5 minutes)"
-}
-
-# EventBridge target
-resource "aws_cloudwatch_event_target" "idle_checker" {
-  rule      = aws_cloudwatch_event_rule.idle_checker.name
-  target_id = "idle-checker-lambda"
-  arn       = aws_lambda_function.idle_checker.arn
-}
-
-# Permission for EventBridge to invoke Lambda
-resource "aws_lambda_permission" "idle_checker" {
-  statement_id  = "AllowEventBridgeInvoke"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.idle_checker.function_name
-  principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.idle_checker.arn
 }

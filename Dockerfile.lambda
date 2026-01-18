@@ -3,8 +3,8 @@
 # Build: docker build -f Dockerfile.lambda -t kube-sandbox-lambda .
 # Push:  docker push <your-dockerhub>/kube-sandbox-lambda:latest
 
-# Stage 1: Download terraform providers
-FROM hashicorp/terraform:1.7 AS provider-cache
+# Stage 1: Download and prepare terraform providers
+FROM hashicorp/terraform:1.14 AS provider-cache
 
 WORKDIR /workspace
 
@@ -14,30 +14,26 @@ COPY terraform/*.tf ./terraform/
 # Create a minimal backend override to skip S3 backend during init
 RUN printf 'terraform {\n  backend "local" {}\n}\n' > terraform/backend_override.tf
 
-# Download providers to /plugins directory
-RUN cd terraform && terraform init -backend=false \
-    && terraform providers mirror /plugins
+# Initialize terraform to download providers, then copy them
+RUN cd terraform && terraform init -backend=false
+
+# Copy the initialized .terraform/providers directory which has extracted providers
+RUN cp -r terraform/.terraform/providers /providers
 
 # Stage 2: Lambda runtime with terraform
 FROM public.ecr.aws/lambda/python:3.12
 
-# Install terraform binary
-RUN dnf install -y unzip \
-    && curl -sLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_amd64.zip \
+# Install terraform and git
+RUN dnf install -y unzip git \
+    && curl -sLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.14.3/terraform_1.14.3_linux_amd64.zip \
     && unzip /tmp/terraform.zip -d /usr/local/bin/ \
     && rm /tmp/terraform.zip \
     && dnf clean all
 
-# Copy pre-cached providers from builder stage
-COPY --from=provider-cache /plugins /opt/terraform-plugins
+# Copy pre-extracted providers from builder stage
+COPY --from=provider-cache /providers /opt/terraform-providers
 
-# Configure terraform to use cached plugins (no network downloads)
-ENV TF_PLUGIN_CACHE_DIR=/opt/terraform-plugins
-
-# Copy terraform configuration (for destroy operation)
-COPY terraform/*.tf ${LAMBDA_TASK_ROOT}/terraform/
-
-# Copy Lambda handler
+# Copy Lambda handler only - terraform config is cloned at runtime
 COPY lambda/idle_checker/main.py ${LAMBDA_TASK_ROOT}/
 
 # Lambda handler

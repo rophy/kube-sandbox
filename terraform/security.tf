@@ -22,13 +22,13 @@ resource "aws_security_group" "k3s" {
     cidr_blocks = [var.allowed_ssh_cidr]
   }
 
-  # K3s API server (for external kubeconfig access)
+  # K3s API via nginx TLS termination (for external kubeconfig access)
   ingress {
-    description = "K3s API"
-    from_port   = 6443
-    to_port     = 6443
+    description = "K3s API via nginx"
+    from_port   = 16443
+    to_port     = 16443
     protocol    = "tcp"
-    cidr_blocks = [var.allowed_ssh_cidr]
+    cidr_blocks = ["0.0.0.0/0"]
   }
 
   # Docker Registry NodePort

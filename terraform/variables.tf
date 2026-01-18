@@ -67,4 +67,10 @@ variable "enable_auto_destroy" {
 variable "lambda_image_uri" {
   description = "ECR image URI for the idle-checker Lambda (e.g., 123456789.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:0.1.0)"
   type        = string
+  default     = "" # Default empty for destroy operations
+}
+
+variable "github_repo_url" {
+  description = "GitHub repo URL for Lambda to clone terraform configs (e.g., https://github.com/user/kube-sandbox.git)"
+  type        = string
 }

@@ -30,11 +30,11 @@ fi
 
 echo "K3s server IP: $DB_IP"
 
-# Wait for K3s to be ready
-echo "Waiting for K3s API to be ready..."
+# Wait for nginx proxy to be ready (K3s API via nginx TLS termination)
+echo "Waiting for K3s API (via nginx on port 16443) to be ready..."
 for i in {1..60}; do
-    if curl -sk "https://${DB_IP}:6443" >/dev/null 2>&1; then
-        echo "K3s API is responding"
+    if curl -sk "https://${DB_IP}:16443" >/dev/null 2>&1; then
+        echo "K3s API (nginx) is responding"
         break
     fi
     echo "Attempt $i/60 - waiting..."
@@ -51,9 +51,9 @@ if [ -s "$OUTPUT_FILE" ]; then
     chmod 600 "$OUTPUT_FILE"
 
     # Fix empty server IP in kubeconfig
-    if grep -q "server: https://:6443" "$OUTPUT_FILE"; then
+    if grep -q "server: https://:16443" "$OUTPUT_FILE"; then
         echo "Fixing server IP in kubeconfig..."
-        sed -i "s|server: https://:6443|server: https://${DB_IP}:6443|" "$OUTPUT_FILE"
+        sed -i "s|server: https://:16443|server: https://${DB_IP}:16443|" "$OUTPUT_FILE"
     fi
 
     # Verify kubeconfig has correct server URL
