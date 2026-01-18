@@ -9,3 +9,4 @@ kubeconfig.yaml
 .ec2-ip
 .ssh/
 lambda/**/*.zip
+.build/

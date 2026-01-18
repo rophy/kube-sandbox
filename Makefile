@@ -9,8 +9,7 @@ shell: ## Start container and open shell
 build-devcontainer: ## Build the dev container image
 	./scripts/build-devcontainer.sh
 
-build: ## Build Lambda images (kube-sandbox-api, kube-sandbox-tf)
-	docker build -f Dockerfile.api --target lambda -t kube-sandbox-api:latest .
+build: ## Build Lambda image (kube-sandbox-tf)
 	docker build -f Dockerfile.tf -t kube-sandbox-tf:latest .
 
 # ===== INFRA (Lambda, IAM - zero cost, deploy once) =====

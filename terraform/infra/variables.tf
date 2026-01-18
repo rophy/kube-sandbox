@@ -4,11 +4,6 @@ variable "aws_region" {
   default     = "ap-east-2"
 }
 
-variable "lambda_api_image_uri" {
-  description = "ECR image URI for the check Lambda (API image)"
-  type        = string
-}
-
 variable "lambda_tf_image_uri" {
   description = "ECR image URI for apply/destroy Lambdas (Terraform image)"
   type        = string

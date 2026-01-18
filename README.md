@@ -53,6 +53,22 @@ This ensures you won't forget to destroy the cluster and accumulate unexpected c
 - Errors checking metrics → safe default, no destroy
 - `enable_auto_destroy = false` disables destruction (dry-run mode)
 
+**Status API:**
+After deploying the infra, a status API endpoint is available:
+```bash
+# Get API URL from terraform output
+cd terraform/infra && terraform output status_api_url
+
+# Example response
+curl https://xxxxxxx.execute-api.ap-east-2.amazonaws.com/prod/status
+{
+  "status": "active",
+  "last_activity_at": "2026-01-18T16:01:30Z",
+  "idle_since_minutes": 2.9,
+  "destroy_at": "2026-01-18T16:31:30Z"
+}
+```
+
 ## Prerequisites
 
 - Docker and Docker Compose
@@ -68,8 +84,7 @@ This ensures you won't forget to destroy the cluster and accumulate unexpected c
 # Create S3 bucket for Terraform state
 aws s3 mb s3://kube-sandbox-YOUR_ACCOUNT_ID --region ap-east-2
 
-# Create ECR repositories for Lambda images
-aws ecr create-repository --repository-name kube-sandbox-api --region ap-east-2
+# Create ECR repository for Lambda image
 aws ecr create-repository --repository-name kube-sandbox-tf --region ap-east-2
 
 # Configure backend
@@ -77,7 +92,7 @@ cp terraform/backend.tfvars.example terraform/backend.tfvars
 # Edit with your bucket name
 ```
 
-### 2. Build and Push Lambda Images
+### 2. Build and Push Lambda Image
 
 ```bash
 # Set variables
@@ -89,24 +104,21 @@ ECR=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 aws ecr get-login-password --region $AWS_REGION | \
   docker login --username AWS --password-stdin $ECR
 
-# Build and push API image (check Lambda + status server)
-docker build -f Dockerfile.api --target lambda -t $ECR/kube-sandbox-api:latest .
-docker push $ECR/kube-sandbox-api:latest
-
 # Build and push Terraform image (apply/destroy Lambdas - same image, different TF_ACTION env var)
 docker build -f Dockerfile.tf -t $ECR/kube-sandbox-tf:latest .
 docker push $ECR/kube-sandbox-tf:latest
 ```
 
+Note: The check/status Lambda uses Node.js (no Docker image needed - AWS SDK v3 is built-in).
+
 ### 3. Configure Terraform
 
 Create `terraform/infra/terraform.tfvars`:
 ```hcl
-lambda_api_image_uri = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-api:latest"
-lambda_tf_image_uri  = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-tf:latest"
-github_repo_url      = "https://github.com/YOUR_USER/kube-sandbox.git"
-tf_state_bucket      = "kube-sandbox-YOUR_ACCOUNT_ID"
-enable_auto_destroy  = true
+lambda_tf_image_uri = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-tf:latest"
+github_repo_url     = "https://github.com/YOUR_USER/kube-sandbox.git"
+tf_state_bucket     = "kube-sandbox-YOUR_ACCOUNT_ID"
+enable_auto_destroy = true
 ```
 
 Create `terraform/cluster/terraform.tfvars` (optional, to override defaults):
