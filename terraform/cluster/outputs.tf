@@ -28,6 +28,16 @@ output "worker2_private_ip" {
   value       = aws_instance.worker2.private_ip
 }
 
+output "worker3_public_ip" {
+  description = "Public IP of worker3 node - Elastic IP"
+  value       = aws_eip.worker3.public_ip
+}
+
+output "worker3_private_ip" {
+  description = "Private IP of worker3 node"
+  value       = aws_instance.worker3.private_ip
+}
+
 output "k3s_token" {
   description = "K3s cluster token"
   value       = random_password.k3s_token.result
@@ -40,6 +50,7 @@ output "ssh_commands" {
     master  = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.master.public_ip}"
     worker1 = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.worker1.public_ip}"
     worker2 = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.worker2.public_ip}"
+    worker3 = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.worker3.public_ip}"
   }
 }
 

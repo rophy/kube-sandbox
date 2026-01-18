@@ -40,6 +40,12 @@ variable "worker2_instance_type" {
   default     = "t3.large"
 }
 
+variable "worker3_instance_type" {
+  description = "Instance type for worker3 node (K3s agent)"
+  type        = string
+  default     = "t3.large"
+}
+
 variable "use_spot_instances" {
   description = "Use spot instances for cost savings"
   type        = bool

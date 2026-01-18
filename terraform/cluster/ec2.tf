@@ -23,6 +23,14 @@ resource "aws_eip" "worker2" {
   }
 }
 
+resource "aws_eip" "worker3" {
+  domain = "vpc"
+
+  tags = {
+    Name = "k3s-worker3-eip"
+  }
+}
+
 # Get latest Amazon Linux 2023 AMI
 data "aws_ami" "al2023" {
   most_recent = true
@@ -251,7 +259,15 @@ aws cloudwatch put-metric-data \
 PUBLISH_METRICS
 
 chmod +x /usr/local/bin/publish-metrics.sh
-echo "*/5 * * * * root /usr/local/bin/publish-metrics.sh >> /var/log/metrics-publish.log 2>&1" > /etc/cron.d/publish-metrics
+
+# Cron files in /etc/cron.d/ MUST end with a newline
+cat > /etc/cron.d/publish-metrics << 'CRON'
+*/5 * * * * root /usr/local/bin/publish-metrics.sh >> /var/log/metrics-publish.log 2>&1
+
+CRON
+
+# Run metrics publisher immediately on boot (don't wait 5 minutes)
+/usr/local/bin/publish-metrics.sh >> /var/log/metrics-publish.log 2>&1 &
 
 sed -e "s/127.0.0.1/$PUBLIC_IP/g" -e "s/:6443/:16443/g" /etc/rancher/k3s/k3s.yaml > /tmp/kubeconfig-external.yaml
 chmod 644 /tmp/kubeconfig-external.yaml
@@ -259,7 +275,8 @@ chmod 644 /tmp/kubeconfig-external.yaml
 echo "K3s server ready with nginx proxy on port 16443"
 EOF
 
-  k3s_agent_worker1_userdata = <<-EOF
+  # Template function for worker userdata - just pass the worker name
+  k3s_agent_userdata = { for name in ["worker1", "worker2", "worker3"] : name => <<-EOF
 #!/bin/bash
 set -e
 
@@ -287,43 +304,11 @@ done
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
   --server "https://$SERVER_IP:6443" \
   --token "${random_password.k3s_token.result}" \
-  --node-label "role=worker1"
+  --node-label "role=${name}"
 
-echo "K3s agent (worker1) ready"
+echo "K3s agent (${name}) ready"
 EOF
-
-  k3s_agent_worker2_userdata = <<-EOF
-#!/bin/bash
-set -e
-
-dnf install -y jq cronie
-systemctl enable --now crond
-systemctl disable --now firewalld || true
-
-mkdir -p /etc/rancher/k3s
-cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
-mirrors:
-  "registry.registry.svc.cluster.local:30500":
-    endpoint:
-      - "http://localhost:30500"
-  "localhost:30500":
-    endpoint:
-      - "http://localhost:30500"
-REGISTRIES
-
-SERVER_IP="${aws_instance.master.private_ip}"
-until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
-  echo "Waiting for K3s server..."
-  sleep 10
-done
-
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
-  --server "https://$SERVER_IP:6443" \
-  --token "${random_password.k3s_token.result}" \
-  --node-label "role=worker2"
-
-echo "K3s agent (worker2) ready"
-EOF
+  }
 }
 
 # Master Node - K3s Server
@@ -368,7 +353,7 @@ resource "aws_instance" "worker1" {
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
 
-  user_data = local.k3s_agent_worker1_userdata
+  user_data = local.k3s_agent_userdata["worker1"]
 
   dynamic "instance_market_options" {
     for_each = var.use_spot_instances ? [1] : []
@@ -403,7 +388,7 @@ resource "aws_instance" "worker2" {
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
 
-  user_data = local.k3s_agent_worker2_userdata
+  user_data = local.k3s_agent_userdata["worker2"]
 
   dynamic "instance_market_options" {
     for_each = var.use_spot_instances ? [1] : []
@@ -429,6 +414,41 @@ resource "aws_instance" "worker2" {
   }
 }
 
+# Worker3 Node - K3s Agent
+resource "aws_instance" "worker3" {
+  ami                    = data.aws_ami.al2023.id
+  instance_type          = var.worker3_instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.k3s.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2.name
+  key_name               = aws_key_pair.main.key_name
+
+  user_data = local.k3s_agent_userdata["worker3"]
+
+  dynamic "instance_market_options" {
+    for_each = var.use_spot_instances ? [1] : []
+    content {
+      market_type = "spot"
+      spot_options {
+        instance_interruption_behavior = "terminate"
+        spot_instance_type             = "one-time"
+      }
+    }
+  }
+
+  root_block_device {
+    volume_size = 30
+    volume_type = "gp3"
+  }
+
+  depends_on = [aws_instance.master]
+
+  tags = {
+    Name = "k3s-worker3"
+    Role = "agent"
+  }
+}
+
 # Associate Elastic IPs with instances
 resource "aws_eip_association" "master" {
   instance_id   = aws_instance.master.id
@@ -443,4 +463,9 @@ resource "aws_eip_association" "worker1" {
 resource "aws_eip_association" "worker2" {
   instance_id   = aws_instance.worker2.id
   allocation_id = aws_eip.worker2.id
+}
+
+resource "aws_eip_association" "worker3" {
+  instance_id   = aws_instance.worker3.id
+  allocation_id = aws_eip.worker3.id
 }
