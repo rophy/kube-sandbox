@@ -32,7 +32,7 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# Public Subnet (single AZ, no NAT Gateway)
+# Public Subnet
 resource "aws_subnet" "public" {
   vpc_id                  = aws_vpc.main.id
   cidr_block              = var.subnet_cidr
@@ -63,4 +63,3 @@ resource "aws_route_table_association" "public" {
   subnet_id      = aws_subnet.public.id
   route_table_id = aws_route_table.public.id
 }
-

@@ -23,19 +23,19 @@ variable "subnet_cidr" {
 }
 
 variable "db_instance_type" {
-  description = "Instance type for node 1 (K3s server)"
+  description = "Instance type for DB node (K3s server)"
   type        = string
   default     = "m6i.2xlarge"
 }
 
 variable "stream_instance_type" {
-  description = "Instance type for node 2 (K3s agent)"
+  description = "Instance type for Stream node (K3s agent)"
   type        = string
   default     = "m6i.2xlarge"
 }
 
 variable "client_instance_type" {
-  description = "Instance type for node 3 (K3s agent)"
+  description = "Instance type for Client node (K3s agent)"
   type        = string
   default     = "m6i.2xlarge"
 }
@@ -50,27 +50,4 @@ variable "allowed_ssh_cidr" {
   description = "CIDR block allowed for SSH access"
   type        = string
   default     = "0.0.0.0/0"
-}
-
-variable "idle_timeout_minutes" {
-  description = "Minutes of idle before auto-destroy"
-  type        = number
-  default     = 30
-}
-
-variable "enable_auto_destroy" {
-  description = "Enable auto-destroy on idle. When false, Lambda logs idle detection but doesn't trigger destroy (dry-run mode for testing)."
-  type        = bool
-  default     = false
-}
-
-variable "lambda_image_uri" {
-  description = "ECR image URI for the idle-checker Lambda (e.g., 123456789.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:0.1.0)"
-  type        = string
-  default     = "" # Default empty for destroy operations
-}
-
-variable "github_repo_url" {
-  description = "GitHub repo URL for Lambda to clone terraform configs (e.g., https://github.com/user/kube-sandbox.git)"
-  type        = string
 }

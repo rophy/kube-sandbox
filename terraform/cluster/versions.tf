@@ -2,8 +2,7 @@ terraform {
   required_version = ">= 1.0"
 
   backend "s3" {
-    # bucket provided via -backend-config
-    key          = "kube-sandbox/terraform.tfstate"
+    key          = "kube-sandbox/cluster/terraform.tfstate"
     region       = "ap-east-2"
     encrypt      = true
     use_lockfile = true
@@ -30,8 +29,8 @@ provider "aws" {
 
   default_tags {
     tags = {
-      Project     = "k3s-perf-test"
-      Environment = "ephemeral"
+      Project     = "kube-sandbox"
+      Component   = "cluster"
       ManagedBy   = "terraform"
     }
   }

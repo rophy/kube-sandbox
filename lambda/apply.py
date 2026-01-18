@@ -1,3 +1,7 @@
+"""
+Apply the cluster using terraform apply.
+Note: For full functionality, SSH key must exist in the repo or be generated.
+"""
 import os
 import subprocess
 import logging
@@ -10,35 +14,31 @@ WORK_DIR = '/tmp/workspace'
 
 def handler(event, context):
     """
-    Triggered by EC2 cronjob when idle detected.
-    Clones repo and runs terraform destroy.
+    Clone repo and run terraform apply on cluster.
     """
     github_repo_url = os.environ['GITHUB_REPO_URL']
     tf_state_bucket = os.environ['TF_STATE_BUCKET']
-    enable_auto_destroy = os.environ.get('ENABLE_AUTO_DESTROY', 'false').lower() == 'true'
 
-    logger.info(f"Lambda invoked: enable_auto_destroy={enable_auto_destroy}")
+    logger.info("Starting cluster apply...")
 
-    if not enable_auto_destroy:
-        logger.warning("DRY RUN: Would trigger destroy, but enable_auto_destroy=false")
-        return {'status': 'dry_run', 'message': 'Auto-destroy disabled'}
-
-    logger.warning("Running terraform destroy...")
-    success, output = run_terraform_destroy(github_repo_url, tf_state_bucket)
+    success, output = run_terraform('apply', github_repo_url, tf_state_bucket)
 
     if success:
-        logger.warning("Terraform destroy completed successfully")
-        return {'status': 'destroyed', 'output': output[-1000:]}
+        logger.info("Terraform apply completed successfully")
+        return {'status': 'applied', 'output': output[-1000:]}
     else:
-        logger.error(f"Terraform destroy failed: {output[-2000:]}")
-        return {'status': 'destroy_failed', 'error': output[-2000:]}
+        logger.error(f"Terraform apply failed: {output[-2000:]}")
+        return {'status': 'apply_failed', 'error': output[-2000:]}
 
 
-def run_terraform_destroy(github_repo_url, tf_state_bucket):
+def run_terraform(action, github_repo_url, tf_state_bucket):
     """
-    Clone repo and run terraform destroy.
+    Clone repo and run terraform action on cluster/ directory.
     """
     try:
+        # Clean up any previous run
+        subprocess.run(['rm', '-rf', WORK_DIR], capture_output=True)
+
         # Clone repo
         logger.info(f"Cloning {github_repo_url}...")
         subprocess.run(
@@ -48,14 +48,26 @@ def run_terraform_destroy(github_repo_url, tf_state_bucket):
             text=True
         )
 
-        terraform_dir = os.path.join(WORK_DIR, 'terraform')
+        terraform_dir = os.path.join(WORK_DIR, 'terraform', 'cluster')
+
+        # Generate SSH key for new cluster
+        ssh_dir = os.path.join(WORK_DIR, '.ssh')
+        os.makedirs(ssh_dir, exist_ok=True)
+        ssh_key = os.path.join(ssh_dir, 'id_rsa')
+
+        logger.info("Generating SSH key...")
+        subprocess.run(
+            ['ssh-keygen', '-t', 'rsa', '-b', '4096', '-f', ssh_key, '-N', '', '-C', 'kube-sandbox'],
+            check=True,
+            capture_output=True,
+            text=True
+        )
 
         # Create backend.tfvars
         backend_tfvars = os.path.join(terraform_dir, 'backend.tfvars')
         with open(backend_tfvars, 'w') as f:
             f.write(f'bucket = "{tf_state_bucket}"\n')
 
-        # Set environment for terraform
         env = os.environ.copy()
         env['TF_INPUT'] = '0'
 
@@ -80,10 +92,10 @@ def run_terraform_destroy(github_repo_url, tf_state_bucket):
 
         logger.info("Terraform init completed")
 
-        # Run terraform destroy
-        logger.info("Running terraform destroy...")
-        destroy_result = subprocess.run(
-            ['terraform', 'destroy', '-auto-approve', '-no-color'],
+        # Run terraform action
+        logger.info(f"Running terraform {action}...")
+        action_result = subprocess.run(
+            ['terraform', action, '-auto-approve', '-no-color'],
             cwd=terraform_dir,
             env=env,
             capture_output=True,
@@ -91,9 +103,9 @@ def run_terraform_destroy(github_repo_url, tf_state_bucket):
             timeout=600
         )
 
-        output = f"{destroy_result.stdout}\n{destroy_result.stderr}"
+        output = f"{action_result.stdout}\n{action_result.stderr}"
 
-        if destroy_result.returncode != 0:
+        if action_result.returncode != 0:
             return False, output
 
         return True, output

@@ -8,23 +8,23 @@ FROM hashicorp/terraform:1.14 AS provider-cache
 
 WORKDIR /workspace
 
-# Copy only the files needed to determine provider requirements
-COPY terraform/*.tf ./terraform/
+# Copy cluster terraform files (used to determine provider requirements)
+COPY terraform/cluster/*.tf ./terraform/cluster/
 
 # Create a minimal backend override to skip S3 backend during init
-RUN printf 'terraform {\n  backend "local" {}\n}\n' > terraform/backend_override.tf
+RUN printf 'terraform {\n  backend "local" {}\n}\n' > terraform/cluster/backend_override.tf
 
 # Initialize terraform to download providers, then copy them
-RUN cd terraform && terraform init -backend=false
+RUN cd terraform/cluster && terraform init -backend=false
 
-# Copy the initialized .terraform/providers directory which has extracted providers
-RUN cp -r terraform/.terraform/providers /providers
+# Copy the initialized .terraform/providers directory
+RUN cp -r terraform/cluster/.terraform/providers /providers
 
 # Stage 2: Lambda runtime with terraform
 FROM public.ecr.aws/lambda/python:3.12
 
-# Install terraform and git
-RUN dnf install -y unzip git \
+# Install terraform, git, and openssh (for ssh-keygen in apply)
+RUN dnf install -y unzip git openssh \
     && curl -sLo /tmp/terraform.zip https://releases.hashicorp.com/terraform/1.14.3/terraform_1.14.3_linux_amd64.zip \
     && unzip /tmp/terraform.zip -d /usr/local/bin/ \
     && rm /tmp/terraform.zip \
@@ -33,8 +33,8 @@ RUN dnf install -y unzip git \
 # Copy pre-extracted providers from builder stage
 COPY --from=provider-cache /providers /opt/terraform-providers
 
-# Copy Lambda handler only - terraform config is cloned at runtime
-COPY lambda/idle_checker/main.py ${LAMBDA_TASK_ROOT}/
+# Copy all Lambda handlers - each Lambda function specifies its own handler
+COPY lambda/check.py lambda/apply.py lambda/destroy.py ${LAMBDA_TASK_ROOT}/
 
-# Lambda handler
-CMD ["main.handler"]
+# Default handler (overridden by each Lambda function's image_config)
+CMD ["check.handler"]

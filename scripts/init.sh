@@ -22,23 +22,29 @@ fi
 
 # Check for backend.tfvars
 BACKEND_CONFIG="${PROJECT_DIR}/terraform/backend.tfvars"
+
 if [ ! -f "$BACKEND_CONFIG" ]; then
     echo ""
     echo "ERROR: terraform/backend.tfvars not found."
     echo ""
     echo "Please create it with your S3 bucket name:"
     echo ""
-    echo "  cp terraform/backend.tfvars.example terraform/backend.tfvars"
-    echo "  # Then edit terraform/backend.tfvars with your bucket name"
+    echo "  echo 'bucket = \"your-bucket-name\"' > terraform/backend.tfvars"
     echo ""
     exit 1
 fi
 
-# Run terraform init with backend config
+# Run terraform init for infra
 echo ""
-echo "Running terraform init..."
-cd "${PROJECT_DIR}/terraform"
-terraform init -backend-config=backend.tfvars
+echo "Running terraform init for infra..."
+cd "${PROJECT_DIR}/terraform/infra"
+terraform init -backend-config=../backend.tfvars
+
+# Run terraform init for cluster
+echo ""
+echo "Running terraform init for cluster..."
+cd "${PROJECT_DIR}/terraform/cluster"
+terraform init -backend-config=../backend.tfvars
 
 echo ""
 echo "=== Initialization complete ==="
