@@ -40,6 +40,15 @@ resource "aws_security_group" "k3s" {
     cidr_blocks = [var.allowed_ssh_cidr]
   }
 
+  # Status API NodePort
+  ingress {
+    description = "Status API"
+    from_port   = 30080
+    to_port     = 30080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   # Allow all outbound
   egress {
     description = "All outbound"
