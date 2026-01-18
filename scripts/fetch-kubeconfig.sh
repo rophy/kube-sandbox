@@ -3,7 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${SCRIPT_DIR}/.."
-TERRAFORM_DIR="${PROJECT_DIR}/terraform"
+TERRAFORM_DIR="${PROJECT_DIR}/terraform/cluster"
 SSH_KEY="${PROJECT_DIR}/.ssh/id_rsa"
 OUTPUT_FILE="${HOME}/.kube/config"
 
@@ -21,10 +21,12 @@ echo "=== Fetching kubeconfig from K3s server ==="
 
 # Get the server IP from terraform output
 cd "$TERRAFORM_DIR"
-DB_IP=$(terraform output -raw db_node_public_ip 2>/dev/null)
+DB_IP=$(terraform output -raw db_node_public_ip 2>/dev/null || true)
 
-if [ -z "$DB_IP" ]; then
-    echo "ERROR: Could not get DB node IP. Is the infrastructure deployed?"
+# Check if we got a valid IP (not empty and not terraform warning text)
+if [ -z "$DB_IP" ] || ! echo "$DB_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "ERROR: Could not get DB node IP. Is the cluster deployed?"
+    echo "Run 'make up' to create the cluster first."
     exit 1
 fi
 
