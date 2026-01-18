@@ -65,11 +65,16 @@ if [ -s "$OUTPUT_FILE" ]; then
         sed -i "s|server: https://:16443|server: https://${DB_IP}:16443|" "$OUTPUT_FILE"
     fi
 
+    # Rename context/cluster/user from "default" to "kube-sandbox"
+    sed -i 's/: default$/: kube-sandbox/g' "$OUTPUT_FILE"
+    sed -i 's/name: default$/name: kube-sandbox/g' "$OUTPUT_FILE"
+
     # Verify kubeconfig has correct server URL
     SERVER_URL=$(grep "server:" "$OUTPUT_FILE" | awk '{print $2}')
     echo ""
     echo "Kubeconfig saved to: $OUTPUT_FILE"
     echo "Server URL: $SERVER_URL"
+    echo "Context: kube-sandbox"
     echo ""
     echo "kubectl is now ready to use:"
     echo "  kubectl get nodes"
