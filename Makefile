@@ -1,4 +1,4 @@
-.PHONY: help shell up down init kubeconfig build-devcontainer infra-up infra-down
+.PHONY: help shell up down init kubeconfig build-devcontainer build infra-up infra-down
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -8,6 +8,10 @@ shell: ## Start container and open shell
 
 build-devcontainer: ## Build the dev container image
 	./scripts/build-devcontainer.sh
+
+build: ## Build Lambda images (kube-sandbox-api, kube-sandbox-tf)
+	docker build -f Dockerfile.api --target lambda -t kube-sandbox-api:latest .
+	docker build -f Dockerfile.tf -t kube-sandbox-tf:latest .
 
 # ===== INFRA (Lambda, IAM - zero cost, deploy once) =====
 
