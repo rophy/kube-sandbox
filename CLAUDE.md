@@ -8,23 +8,7 @@ Check if inside the dev container:
 echo $DEV_CONTAINER
 ```
 
-If `DEV_CONTAINER` is not `true`, display this warning and STOP:
-
-```
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║   ⚠️  WARNING: YOU ARE NOT INSIDE THE DEV CONTAINER                          ║
-║                                                                              ║
-║   This project requires running inside the dev container which has           ║
-║   Terraform, AWS CLI, and kubectl pre-installed.                             ║
-║                                                                              ║
-║   Please exit and run Claude from inside the container:                      ║
-║                                                                              ║
-║       make shell      # Enter the dev container                              ║
-║       claude          # Then start Claude inside                             ║
-║                                                                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-```
+If `DEV_CONTAINER` is not `true`, stop and confirm with user if this is intended.
 
 ## About This Environment
 
@@ -106,11 +90,11 @@ echo $SKAFFOLD_DEFAULT_REPO
 
 ```bash
 # Login to ECR (valid for 12 hours)
-aws ecr get-login-password | podman login --username AWS --password-stdin $SKAFFOLD_DEFAULT_REPO
+aws ecr get-login-password | docker login --username AWS --password-stdin $SKAFFOLD_DEFAULT_REPO
 
 # Push images
-podman tag myimage:latest $SKAFFOLD_DEFAULT_REPO/myimage:latest
-podman push $SKAFFOLD_DEFAULT_REPO/myimage:latest
+docker tag myimage:latest $SKAFFOLD_DEFAULT_REPO/myimage:latest
+docker push $SKAFFOLD_DEFAULT_REPO/myimage:latest
 ```
 
 ### Using with Skaffold
@@ -127,9 +111,40 @@ build:
 
 K8s nodes have IAM instance profiles with ECR pull permissions, so pods can pull images without additional configuration.
 
+## Changing Instance Types
+
+The cluster uses Elastic IPs, so instance types can be changed dynamically:
+
+1. Update `terraform/terraform.tfvars` with new instance types
+2. Run `terraform apply` - instances will be replaced but keep the same public IPs
+3. K3s certificates remain valid because the Elastic IP doesn't change
+
+**Note:** Changing instance types triggers instance replacement (destroy + create), not in-place modification.
+
 ## Important Notes
 
 - All AWS operations require valid credentials (mounted from `~/.aws` or via environment variables)
 - On-demand instances are used by default
 - The cluster is ephemeral - destroy when done to avoid charges
 - EBS volumes created by CSI driver are automatically cleaned up by `make down`
+
+## WARNINGS FOR AI ASSISTANTS
+
+**DO NOT blindly overwrite `terraform/terraform.tfvars`!**
+
+When editing terraform.tfvars:
+- READ the existing file first
+- PRESERVE existing values you're not intentionally changing
+- Use targeted edits, not full file overwrites
+
+Example of what NOT to do:
+```bash
+# BAD - overwrites entire file, losing existing settings
+echo 'lambda_image_uri = "..."' > terraform/terraform.tfvars
+```
+
+Example of correct approach:
+```bash
+# GOOD - read first, then edit specific values
+# Use Edit tool to modify only the specific line needed
+```

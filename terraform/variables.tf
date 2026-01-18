@@ -63,3 +63,8 @@ variable "enable_auto_destroy" {
   type        = bool
   default     = false
 }
+
+variable "lambda_image_uri" {
+  description = "ECR image URI for the idle-checker Lambda (e.g., 123456789.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:0.1.0)"
+  type        = string
+}

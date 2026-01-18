@@ -31,22 +31,42 @@ Disposable Kubernetes cluster on AWS with minimal cost using K3s and Terraform.
 
 ### S3 Backend
 
-Terraform uses an S3 bucket to store state with native state locking. Before running `make init`, update `terraform/versions.tf` with your bucket:
-
-```hcl
-backend "s3" {
-  bucket       = "your-bucket-name"    # Change this
-  key          = "kube-sandbox/terraform.tfstate"
-  region       = "us-east-1"           # Change to your region
-  encrypt      = true
-  use_lockfile = true
-}
-```
-
-Create the bucket if it doesn't exist:
+Terraform uses an S3 bucket to store state. Create the bucket and configure `backend.tfvars`:
 
 ```bash
-aws s3 mb s3://your-bucket-name --region us-east-1
+# Create bucket (one-time)
+aws s3 mb s3://kube-sandbox-YOUR_ACCOUNT_ID --region ap-east-2
+
+# Configure backend
+cp terraform/backend.tfvars.example terraform/backend.tfvars
+# Edit terraform/backend.tfvars with your bucket name
+```
+
+### ECR Repository (for Auto-Destroy Lambda)
+
+The auto-destroy feature uses a Lambda container image. Push it to ECR:
+
+```bash
+# Set variables
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+AWS_REGION=ap-east-2
+
+# Create ECR repository (one-time)
+aws ecr create-repository --repository-name kube-sandbox-lambda --region $AWS_REGION
+
+# Login to ECR
+aws ecr get-login-password --region $AWS_REGION | \
+  docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+# Build and push (from project root)
+docker build -f Dockerfile.lambda -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:0.1.0 .
+docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/kube-sandbox-lambda:0.1.0
+```
+
+Then add to `terraform/terraform.tfvars`:
+
+```hcl
+lambda_image_uri = "YOUR_ACCOUNT_ID.dkr.ecr.ap-east-2.amazonaws.com/kube-sandbox-lambda:0.1.0"
 ```
 
 ### Required IAM Permissions

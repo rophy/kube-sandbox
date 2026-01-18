@@ -1,3 +1,28 @@
+# Elastic IPs for stable public addresses
+resource "aws_eip" "db" {
+  domain = "vpc"
+
+  tags = {
+    Name = "k3s-db-eip"
+  }
+}
+
+resource "aws_eip" "stream" {
+  domain = "vpc"
+
+  tags = {
+    Name = "k3s-stream-eip"
+  }
+}
+
+resource "aws_eip" "client" {
+  domain = "vpc"
+
+  tags = {
+    Name = "k3s-client-eip"
+  }
+}
+
 # Get latest Amazon Linux 2023 AMI
 data "aws_ami" "al2023" {
   most_recent = true
@@ -76,6 +101,9 @@ resource "aws_iam_instance_profile" "ec2" {
 
 # User data for K3s server (DB node)
 locals {
+  # Elastic IP is known at plan time - use it directly for TLS SAN
+  k3s_server_public_ip = aws_eip.db.public_ip
+
   k3s_server_userdata = <<-EOF
 #!/bin/bash
 set -e
@@ -86,27 +114,9 @@ dnf install -y jq
 # Disable firewalld (K3s manages iptables)
 systemctl disable --now firewalld || true
 
-# Wait for public IP to be assigned (important for TLS SAN)
-echo "Waiting for public IP..."
-PUBLIC_IP=""
-for i in {1..60}; do
-  # Use IMDSv2 with token
-  TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" || true)
-  if [ -n "$TOKEN" ]; then
-    PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4 || true)
-  fi
-  if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "404" ] && [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Got public IP: $PUBLIC_IP"
-    break
-  fi
-  echo "Waiting for public IP... attempt $i"
-  sleep 2
-done
-
-if [ -z "$PUBLIC_IP" ] || ! [[ "$PUBLIC_IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "ERROR: Failed to get public IP after 60 attempts"
-  exit 1
-fi
+# Elastic IP is passed from terraform - no need to fetch from metadata
+PUBLIC_IP="${local.k3s_server_public_ip}"
+echo "Using Elastic IP: $PUBLIC_IP"
 
 # Create K3s manifests directory for auto-deploy
 mkdir -p /var/lib/rancher/k3s/server/manifests
@@ -339,4 +349,20 @@ resource "aws_instance" "client" {
     Workload = "client"
     Role     = "agent"
   }
+}
+
+# Associate Elastic IPs with instances
+resource "aws_eip_association" "db" {
+  instance_id   = aws_instance.db.id
+  allocation_id = aws_eip.db.id
+}
+
+resource "aws_eip_association" "stream" {
+  instance_id   = aws_instance.stream.id
+  allocation_id = aws_eip.stream.id
+}
+
+resource "aws_eip_association" "client" {
+  instance_id   = aws_instance.client.id
+  allocation_id = aws_eip.client.id
 }

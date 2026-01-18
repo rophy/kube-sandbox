@@ -1,29 +1,26 @@
-# Lambda function for idle detection
+# Lambda function for idle detection (container image based)
 
-# Zip the Lambda code
-data "archive_file" "idle_checker" {
-  type        = "zip"
-  source_file = "${path.module}/../lambda/idle_checker/main.py"
-  output_path = "${path.module}/../lambda/idle_checker/main.zip"
+locals {
+  # Read bucket name from backend.tfvars for Lambda environment
+  backend_bucket = regex("bucket\\s*=\\s*\"([^\"]+)\"", file("${path.module}/backend.tfvars"))[0]
 }
 
-# Lambda function
+# Lambda function (container image)
 resource "aws_lambda_function" "idle_checker" {
-  function_name    = "kube-sandbox-idle-checker"
-  description      = "Checks for idle K8s cluster and triggers destroy"
-  filename         = data.archive_file.idle_checker.output_path
-  source_code_hash = data.archive_file.idle_checker.output_base64sha256
-  handler          = "main.handler"
-  runtime          = "python3.12"
-  timeout          = 60
-  role             = aws_iam_role.idle_checker.arn
+  function_name = "kube-sandbox-idle-checker"
+  description   = "Checks for idle K8s cluster and runs terraform destroy"
+  package_type  = "Image"
+  image_uri     = var.lambda_image_uri
+  timeout       = 900 # 15 minutes (Lambda max) for terraform destroy
+  memory_size   = 512 # More memory for terraform operations
+  role          = aws_iam_role.idle_checker.arn
 
   environment {
     variables = {
-      LOG_GROUP_NAME         = aws_cloudwatch_log_group.flow_logs.name
-      IDLE_TIMEOUT_MINUTES   = var.idle_timeout_minutes
-      CODEBUILD_PROJECT_NAME = aws_codebuild_project.destroy.name
-      ENABLE_AUTO_DESTROY    = var.enable_auto_destroy ? "true" : "false"
+      LOG_GROUP_NAME       = aws_cloudwatch_log_group.flow_logs.name
+      IDLE_TIMEOUT_MINUTES = var.idle_timeout_minutes
+      TF_STATE_BUCKET      = local.backend_bucket
+      ENABLE_AUTO_DESTROY  = var.enable_auto_destroy ? "true" : "false"
     }
   }
 
