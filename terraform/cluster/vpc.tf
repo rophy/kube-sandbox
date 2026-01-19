@@ -17,10 +17,6 @@ resource "aws_vpc" "main" {
     Name                      = "k3s-perf-test-vpc"
     "kube-sandbox/created-at" = timestamp()
   }
-
-  lifecycle {
-    ignore_changes = [tags["kube-sandbox/created-at"]]
-  }
 }
 
 # Internet Gateway

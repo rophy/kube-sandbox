@@ -52,6 +52,16 @@ handler() {
         return
     fi
 
+    # Force unlock any stale locks before destroy
+    if [[ "$action" == "destroy" ]]; then
+        echo "Checking for stale state locks..." >&2
+        lock_id=$(terraform plan -no-color 2>&1 | grep -oP 'ID:\s+\K[a-f0-9-]+' | head -1) || true
+        if [[ -n "$lock_id" ]]; then
+            echo "Found stale lock $lock_id, force unlocking..." >&2
+            terraform force-unlock -force "$lock_id" >&2 2>&1 || true
+        fi
+    fi
+
     # Terraform action
     echo "Running terraform $action..." >&2
     if terraform "$action" -auto-approve -no-color >&2 2>&1; then
