@@ -1,24 +1,13 @@
 # Terraform Lambda image for apply/destroy operations
 #
 # Single image handles both actions via TF_ACTION env var.
+# Uses bash script instead of Go for simplicity.
 #
 # Build: docker build -f Dockerfile.tf -t kube-sandbox-tf .
 
 ARG TERRAFORM_VERSION=1.14.3
 
-# Stage 1: Build Go binary
-FROM golang:1.23-alpine AS go-builder
-
-WORKDIR /build
-
-COPY go.mod ./
-COPY cmd/ ./cmd/
-COPY internal/ ./internal/
-
-RUN go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o tf ./cmd/tf
-
-# Stage 2: Download terraform providers
+# Stage 1: Download terraform providers
 FROM hashicorp/terraform:1.14 AS provider-cache
 
 WORKDIR /workspace
@@ -34,7 +23,7 @@ RUN cd terraform/cluster && terraform init -backend=false
 # Copy providers to a known location
 RUN cp -r terraform/cluster/.terraform/providers /providers
 
-# Stage 3: Lambda runtime with terraform
+# Stage 2: Lambda runtime with terraform
 FROM public.ecr.aws/lambda/provided:al2023
 
 ARG TERRAFORM_VERSION
@@ -49,5 +38,9 @@ RUN dnf install -y unzip git openssh \
 # Copy pre-cached providers
 COPY --from=provider-cache /providers /opt/terraform-providers
 
-# Copy Go binary as Lambda bootstrap
-COPY --from=go-builder /build/tf /var/runtime/bootstrap
+# Copy shell script as Lambda bootstrap
+COPY lambda/tf.sh /var/runtime/bootstrap
+RUN chmod +x /var/runtime/bootstrap
+
+# Override the default entrypoint to run our bootstrap directly
+ENTRYPOINT ["/var/runtime/bootstrap"]
