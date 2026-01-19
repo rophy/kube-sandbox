@@ -8,34 +8,14 @@ output "master_private_ip" {
   value       = aws_instance.master.private_ip
 }
 
-output "worker1_public_ip" {
-  description = "Public IP of worker1 node - Elastic IP"
-  value       = aws_eip.worker1.public_ip
+output "worker_public_ips" {
+  description = "Public IPs of worker nodes - Elastic IPs"
+  value       = { for name, eip in aws_eip.worker : name => eip.public_ip }
 }
 
-output "worker1_private_ip" {
-  description = "Private IP of worker1 node"
-  value       = aws_instance.worker1.private_ip
-}
-
-output "worker2_public_ip" {
-  description = "Public IP of worker2 node - Elastic IP"
-  value       = aws_eip.worker2.public_ip
-}
-
-output "worker2_private_ip" {
-  description = "Private IP of worker2 node"
-  value       = aws_instance.worker2.private_ip
-}
-
-output "worker3_public_ip" {
-  description = "Public IP of worker3 node - Elastic IP"
-  value       = aws_eip.worker3.public_ip
-}
-
-output "worker3_private_ip" {
-  description = "Private IP of worker3 node"
-  value       = aws_instance.worker3.private_ip
+output "worker_private_ips" {
+  description = "Private IPs of worker nodes"
+  value       = { for name, instance in aws_instance.worker : name => instance.private_ip }
 }
 
 output "k3s_token" {
@@ -46,12 +26,10 @@ output "k3s_token" {
 
 output "ssh_commands" {
   description = "SSH commands to connect to each node"
-  value = {
-    master  = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.master.public_ip}"
-    worker1 = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.worker1.public_ip}"
-    worker2 = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.worker2.public_ip}"
-    worker3 = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.worker3.public_ip}"
-  }
+  value = merge(
+    { master = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.master.public_ip}" },
+    { for name, eip in aws_eip.worker : name => "ssh -i .ssh/id_rsa ec2-user@${eip.public_ip}" }
+  )
 }
 
 output "kubeconfig_command" {

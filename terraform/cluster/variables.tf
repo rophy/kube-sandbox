@@ -28,22 +28,16 @@ variable "master_instance_type" {
   default     = "t3.small"
 }
 
-variable "worker1_instance_type" {
-  description = "Instance type for worker1 node (K3s agent)"
-  type        = string
-  default     = "t3.large"
-}
-
-variable "worker2_instance_type" {
-  description = "Instance type for worker2 node (K3s agent)"
-  type        = string
-  default     = "t3.large"
-}
-
-variable "worker3_instance_type" {
-  description = "Instance type for worker3 node (K3s agent)"
-  type        = string
-  default     = "t3.large"
+variable "workers" {
+  description = "Map of worker nodes with their configurations"
+  type = map(object({
+    instance_type = string
+  }))
+  default = {
+    worker1 = { instance_type = "t3.large" }
+    worker2 = { instance_type = "t3.large" }
+    worker3 = { instance_type = "t3.large" }
+  }
 }
 
 variable "use_spot_instances" {

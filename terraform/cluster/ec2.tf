@@ -7,27 +7,12 @@ resource "aws_eip" "master" {
   }
 }
 
-resource "aws_eip" "worker1" {
-  domain = "vpc"
+resource "aws_eip" "worker" {
+  for_each = var.workers
+  domain   = "vpc"
 
   tags = {
-    Name = "k3s-worker1-eip"
-  }
-}
-
-resource "aws_eip" "worker2" {
-  domain = "vpc"
-
-  tags = {
-    Name = "k3s-worker2-eip"
-  }
-}
-
-resource "aws_eip" "worker3" {
-  domain = "vpc"
-
-  tags = {
-    Name = "k3s-worker3-eip"
+    Name = "k3s-${each.key}-eip"
   }
 }
 
@@ -308,7 +293,7 @@ echo "K3s server ready with nginx proxy on port 16443"
 EOF
 
   # Template function for worker userdata - just pass the worker name
-  k3s_agent_userdata = { for name in ["worker1", "worker2", "worker3"] : name => <<-EOF
+  k3s_agent_userdata = { for name in keys(var.workers) : name => <<-EOF
 #!/bin/bash
 set -e
 
@@ -376,16 +361,17 @@ resource "aws_instance" "master" {
   }
 }
 
-# Worker1 Node - K3s Agent
-resource "aws_instance" "worker1" {
+# Worker Nodes - K3s Agents
+resource "aws_instance" "worker" {
+  for_each               = var.workers
   ami                    = data.aws_ami.al2023.id
-  instance_type          = var.worker1_instance_type
+  instance_type          = each.value.instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
 
-  user_data = local.k3s_agent_userdata["worker1"]
+  user_data = local.k3s_agent_userdata[each.key]
 
   dynamic "instance_market_options" {
     for_each = var.use_spot_instances ? [1] : []
@@ -406,77 +392,7 @@ resource "aws_instance" "worker1" {
   depends_on = [aws_instance.master]
 
   tags = {
-    Name = "k3s-worker1"
-    Role = "agent"
-  }
-}
-
-# Worker2 Node - K3s Agent
-resource "aws_instance" "worker2" {
-  ami                    = data.aws_ami.al2023.id
-  instance_type          = var.worker2_instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.k3s.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
-  key_name               = aws_key_pair.main.key_name
-
-  user_data = local.k3s_agent_userdata["worker2"]
-
-  dynamic "instance_market_options" {
-    for_each = var.use_spot_instances ? [1] : []
-    content {
-      market_type = "spot"
-      spot_options {
-        instance_interruption_behavior = "terminate"
-        spot_instance_type             = "one-time"
-      }
-    }
-  }
-
-  root_block_device {
-    volume_size = 30
-    volume_type = "gp3"
-  }
-
-  depends_on = [aws_instance.master]
-
-  tags = {
-    Name = "k3s-worker2"
-    Role = "agent"
-  }
-}
-
-# Worker3 Node - K3s Agent
-resource "aws_instance" "worker3" {
-  ami                    = data.aws_ami.al2023.id
-  instance_type          = var.worker3_instance_type
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.k3s.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2.name
-  key_name               = aws_key_pair.main.key_name
-
-  user_data = local.k3s_agent_userdata["worker3"]
-
-  dynamic "instance_market_options" {
-    for_each = var.use_spot_instances ? [1] : []
-    content {
-      market_type = "spot"
-      spot_options {
-        instance_interruption_behavior = "terminate"
-        spot_instance_type             = "one-time"
-      }
-    }
-  }
-
-  root_block_device {
-    volume_size = 30
-    volume_type = "gp3"
-  }
-
-  depends_on = [aws_instance.master]
-
-  tags = {
-    Name = "k3s-worker3"
+    Name = "k3s-${each.key}"
     Role = "agent"
   }
 }
@@ -487,17 +403,8 @@ resource "aws_eip_association" "master" {
   allocation_id = aws_eip.master.id
 }
 
-resource "aws_eip_association" "worker1" {
-  instance_id   = aws_instance.worker1.id
-  allocation_id = aws_eip.worker1.id
-}
-
-resource "aws_eip_association" "worker2" {
-  instance_id   = aws_instance.worker2.id
-  allocation_id = aws_eip.worker2.id
-}
-
-resource "aws_eip_association" "worker3" {
-  instance_id   = aws_instance.worker3.id
-  allocation_id = aws_eip.worker3.id
+resource "aws_eip_association" "worker" {
+  for_each      = var.workers
+  instance_id   = aws_instance.worker[each.key].id
+  allocation_id = aws_eip.worker[each.key].id
 }
