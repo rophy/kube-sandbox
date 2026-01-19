@@ -4,38 +4,41 @@ Disposable Kubernetes cluster on AWS for testing and experimentation. Uses K3s f
 
 ## Features
 
-- **3-node K3s cluster** with dedicated workload labels (db, stream, client)
+- **4-node K3s cluster** (1 master + 3 workers)
 - **Auto-destroy** - cluster automatically destroys itself after 30 minutes of inactivity
 - **Elastic IPs** - stable public IPs survive instance replacements
 - **EBS CSI driver** - dynamic volume provisioning with gp3 storage
 - **mTLS API access** - secure external kubectl access via nginx proxy
+- **Status API** - check cluster status and predicted shutdown time
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                              AWS                                        │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ Control Plane (always on, ~$0/month)                            │   │
-│  │                                                                 │   │
-│  │  EventBridge ──(5min)──► Check Lambda ──(idle)──► Destroy Lambda│   │
-│  │                              │                                  │   │
-│  │                              ▼                                  │   │
-│  │                      CloudWatch Metrics                         │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-│                                 ▲                                       │
-│                                 │ publishes metrics                     │
-│  ┌─────────────────────────────────────────────────────────────────┐   │
-│  │ Data Plane (on-demand, pay per use)                             │   │
-│  │                                                                 │   │
-│  │  ┌───────────┐    ┌───────────┐    ┌───────────┐               │   │
-│  │  │  master   │    │  worker1  │    │  worker2  │               │   │
-│  │  │  (server) │    │  (agent)  │    │  (agent)  │               │   │
-│  │  └───────────┘    └───────────┘    └───────────┘               │   │
-│  │                                                                 │   │
-│  └─────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                    AWS                                        │
+│                                                                               │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ Control Plane (always on, ~$0/month)                                   │  │
+│  │                                                                        │  │
+│  │  EventBridge ──(5min)──► Check Lambda ──(idle)──► Destroy Lambda       │  │
+│  │                              │                                         │  │
+│  │                              ▼                                         │  │
+│  │                      CloudWatch Metrics                                │  │
+│  │                                                                        │  │
+│  │  API Gateway ──► Status Lambda (returns cluster status JSON)           │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+│                                 ▲                                             │
+│                                 │ publishes metrics                           │
+│  ┌────────────────────────────────────────────────────────────────────────┐  │
+│  │ Data Plane (on-demand, pay per use)                                    │  │
+│  │                                                                        │  │
+│  │  ┌────────┐   ┌─────────┐   ┌─────────┐   ┌─────────┐                 │  │
+│  │  │ master │   │ worker1 │   │ worker2 │   │ worker3 │                 │  │
+│  │  │(server)│   │ (agent) │   │ (agent) │   │ (agent) │                 │  │
+│  │  └────────┘   └─────────┘   └─────────┘   └─────────┘                 │  │
+│  │                                                                        │  │
+│  └────────────────────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Auto-Destroy
@@ -123,9 +126,10 @@ enable_auto_destroy = true
 
 Create `terraform/cluster/terraform.tfvars` (optional, to override defaults):
 ```hcl
-db_instance_type     = "t3.large"
-stream_instance_type = "t3.large"
-client_instance_type = "t3.large"
+master_instance_type  = "t3.small"
+worker1_instance_type = "t3.large"
+worker2_instance_type = "t3.large"
+worker3_instance_type = "t3.large"
 ```
 
 ### 4. Deploy
@@ -162,6 +166,7 @@ make down
 |---------|-------------|
 | `make shell` | Enter dev container |
 | `make init` | Initialize Terraform |
+| `make build` | Build Lambda image (kube-sandbox-tf) |
 | `make up` | Create cluster and fetch kubeconfig |
 | `make down` | Destroy cluster and clean up EBS volumes |
 | `make kubeconfig` | Fetch kubeconfig from existing cluster |
@@ -173,6 +178,7 @@ make down
 | master | K3s server | t3.small | `role=master` |
 | worker1 | K3s agent | t3.large | `role=worker1` |
 | worker2 | K3s agent | t3.large | `role=worker2` |
+| worker3 | K3s agent | t3.large | `role=worker3` |
 
 ## Storage Classes
 
