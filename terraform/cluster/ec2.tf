@@ -7,14 +7,10 @@ resource "aws_eip" "master" {
   }
 }
 
-resource "aws_eip" "worker" {
-  for_each = var.workers
-  domain   = "vpc"
-
-  tags = {
-    Name = "k3s-${each.key}-eip"
-  }
-}
+# Worker nodes do not use Elastic IPs — they join the cluster via the master's
+# private IP and rely on the subnet's auto-assigned public IPv4 for outbound
+# internet (ECR pulls, yum). Use SSM Session Manager for shell access; the
+# worker IAM role already includes AmazonSSMManagedInstanceCore.
 
 # Get latest Amazon Linux 2023 AMI
 data "aws_ami" "al2023" {
@@ -292,8 +288,10 @@ chmod 644 /tmp/kubeconfig-external.yaml
 echo "K3s server ready with nginx proxy on port 16443"
 EOF
 
-  # Template function for worker userdata - just pass the worker name
-  k3s_agent_userdata = { for name in keys(var.workers) : name => <<-EOF
+  # Template function for worker userdata. Each worker can carry:
+  #   - label: used as `role=<label>`; defaults to worker key
+  #   - taint: optional `key=value:Effect` string, applied via --node-taint
+  k3s_agent_userdata = { for name, cfg in var.workers : name => <<-EOF
 #!/bin/bash
 set -e
 
@@ -321,7 +319,7 @@ done
 curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
   --server "https://$SERVER_IP:6443" \
   --token "${random_password.k3s_token.result}" \
-  --node-label "role=${name}"
+  --node-label "role=${coalesce(cfg.label, name)}"${cfg.taint != null ? " \\\n  --node-taint \"${cfg.taint}\"" : ""}
 
 echo "K3s agent (${name}) ready"
 EOF
@@ -403,8 +401,3 @@ resource "aws_eip_association" "master" {
   allocation_id = aws_eip.master.id
 }
 
-resource "aws_eip_association" "worker" {
-  for_each      = var.workers
-  instance_id   = aws_instance.worker[each.key].id
-  allocation_id = aws_eip.worker[each.key].id
-}

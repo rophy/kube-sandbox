@@ -8,14 +8,14 @@ output "master_private_ip" {
   value       = aws_instance.master.private_ip
 }
 
-output "worker_public_ips" {
-  description = "Public IPs of worker nodes - Elastic IPs"
-  value       = { for name, eip in aws_eip.worker : name => eip.public_ip }
-}
-
 output "worker_private_ips" {
   description = "Private IPs of worker nodes"
   value       = { for name, instance in aws_instance.worker : name => instance.private_ip }
+}
+
+output "worker_public_ips" {
+  description = "Ephemeral public IPv4 of worker nodes (may change on stop/start)"
+  value       = { for name, instance in aws_instance.worker : name => instance.public_ip }
 }
 
 output "k3s_token" {
@@ -25,10 +25,10 @@ output "k3s_token" {
 }
 
 output "ssh_commands" {
-  description = "SSH commands to connect to each node"
+  description = "Access commands: SSH to master via EIP; workers via SSM Session Manager (no EIP)"
   value = merge(
     { master = "ssh -i .ssh/id_rsa ec2-user@${aws_eip.master.public_ip}" },
-    { for name, eip in aws_eip.worker : name => "ssh -i .ssh/id_rsa ec2-user@${eip.public_ip}" }
+    { for name, instance in aws_instance.worker : name => "aws ssm start-session --target ${instance.id}" }
   )
 }
 
