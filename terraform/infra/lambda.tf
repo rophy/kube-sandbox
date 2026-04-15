@@ -47,21 +47,26 @@ data "archive_file" "status_lambda" {
 
 # Check Lambda - scheduled invocation
 resource "aws_lambda_function" "check" {
-  function_name    = "kube-sandbox-check"
-  description      = "Check cluster activity, trigger destroy if idle"
-  filename         = data.archive_file.status_lambda.output_path
-  source_code_hash = data.archive_file.status_lambda.output_base64sha256
-  handler          = "status.checkHandler"
-  runtime          = "nodejs22.x"
-  timeout          = 60
-  memory_size      = 128
-  role             = aws_iam_role.lambda.arn
+  function_name                  = "kube-sandbox-check"
+  description                    = "Check cluster activity, trigger destroy if idle"
+  filename                       = data.archive_file.status_lambda.output_path
+  source_code_hash               = data.archive_file.status_lambda.output_base64sha256
+  handler                        = "status.checkHandler"
+  runtime                        = "nodejs22.x"
+  timeout                        = 60
+  memory_size                    = 128
+  reserved_concurrent_executions = 1
+  role                           = aws_iam_role.lambda.arn
 
   environment {
     variables = merge(local.status_env, {
       ENABLE_AUTO_DESTROY   = var.enable_auto_destroy ? "true" : "false"
       DESTROY_FUNCTION_NAME = "kube-sandbox-destroy"
     })
+  }
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
   }
 
   tags = {
@@ -71,18 +76,23 @@ resource "aws_lambda_function" "check" {
 
 # Status Lambda - API Gateway handler
 resource "aws_lambda_function" "status" {
-  function_name    = "kube-sandbox-status"
-  description      = "Return cluster status via API Gateway"
-  filename         = data.archive_file.status_lambda.output_path
-  source_code_hash = data.archive_file.status_lambda.output_base64sha256
-  handler          = "status.statusHandler"
-  runtime          = "nodejs22.x"
-  timeout          = 30
-  memory_size      = 128
-  role             = aws_iam_role.lambda.arn
+  function_name                  = "kube-sandbox-status"
+  description                    = "Return cluster status via API Gateway"
+  filename                       = data.archive_file.status_lambda.output_path
+  source_code_hash               = data.archive_file.status_lambda.output_base64sha256
+  handler                        = "status.statusHandler"
+  runtime                        = "nodejs22.x"
+  timeout                        = 30
+  memory_size                    = 128
+  reserved_concurrent_executions = 1
+  role                           = aws_iam_role.lambda.arn
 
   environment {
     variables = local.status_env
+  }
+
+  lifecycle {
+    ignore_changes = [filename, source_code_hash]
   }
 
   tags = {
@@ -173,13 +183,14 @@ resource "aws_lambda_permission" "status_apigw" {
 # ===== DESTROY Lambda (Container, terraform) =====
 
 resource "aws_lambda_function" "destroy" {
-  function_name = "kube-sandbox-destroy"
-  description   = "Destroy cluster with terraform"
-  package_type  = "Image"
-  image_uri     = var.lambda_tf_image_uri
-  timeout       = 900
-  memory_size   = 512
-  role          = aws_iam_role.lambda.arn
+  function_name                  = "kube-sandbox-destroy"
+  description                    = "Destroy cluster with terraform"
+  package_type                   = "Image"
+  image_uri                      = var.lambda_tf_image_uri
+  timeout                        = 900
+  memory_size                    = 512
+  reserved_concurrent_executions = 1
+  role                           = aws_iam_role.lambda.arn
 
   ephemeral_storage {
     size = 1024
@@ -199,13 +210,14 @@ resource "aws_lambda_function" "destroy" {
 # ===== APPLY Lambda (Container, terraform) =====
 
 resource "aws_lambda_function" "apply" {
-  function_name = "kube-sandbox-apply"
-  description   = "Create cluster with terraform"
-  package_type  = "Image"
-  image_uri     = var.lambda_tf_image_uri
-  timeout       = 900
-  memory_size   = 512
-  role          = aws_iam_role.lambda.arn
+  function_name                  = "kube-sandbox-apply"
+  description                    = "Create cluster with terraform"
+  package_type                   = "Image"
+  image_uri                      = var.lambda_tf_image_uri
+  timeout                        = 900
+  memory_size                    = 512
+  reserved_concurrent_executions = 1
+  role                           = aws_iam_role.lambda.arn
 
   ephemeral_storage {
     size = 1024
