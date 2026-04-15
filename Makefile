@@ -23,7 +23,7 @@ infra-down: ## Destroy infra (Lambda, IAM)
 # ===== CLUSTER (VPC, EC2, K3s - costs money) =====
 
 up: ## Create K3s cluster and fetch kubeconfig
-	cd terraform/cluster && timeout 180 terraform apply -auto-approve
+	cd terraform/cluster && timeout 900 terraform apply -auto-approve
 	timeout 300 ./scripts/fetch-kubeconfig.sh
 	./scripts/install-manifests.sh
 	@echo ""

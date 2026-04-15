@@ -29,14 +29,16 @@ variable "master_instance_type" {
 }
 
 variable "workers" {
-  description = "Map of worker nodes with their configurations"
+  description = "Map of worker nodes. label → value for `role=<label>`; taint → optional `key=value:Effect` string."
   type = map(object({
     instance_type = string
+    label         = optional(string)
+    taint         = optional(string)
   }))
   default = {
-    worker1 = { instance_type = "t3.large" }
-    worker2 = { instance_type = "t3.large" }
-    worker3 = { instance_type = "t3.large" }
+    worker1 = { instance_type = "t3.large", label = "worker1" }
+    worker2 = { instance_type = "t3.large", label = "worker2" }
+    worker3 = { instance_type = "t3.large", label = "worker3" }
   }
 }
 
