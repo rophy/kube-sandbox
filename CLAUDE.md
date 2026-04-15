@@ -1,24 +1,12 @@
 # Claude Instructions for kube-sandbox
 
-## Environment Check (MANDATORY - DO THIS FIRST)
+## Execution Environment
 
-Check if inside the dev container:
+This project no longer runs inside a dev container. It is operated by a Claude teammate sub-agent (the K8s provisioner on team `k8s-sandbox`) running directly on the host.
 
-```bash
-echo $DEV_CONTAINER
-```
+Required tools on the host: `terraform`, `aws` CLI, `kubectl`, `docker`, `gh`. If any are missing, install them on the host rather than shelling into a container.
 
-If `DEV_CONTAINER` is not `true`, stop and confirm with user if this is intended.
-
-## About This Environment
-
-This is a disposable K3s cluster on AWS with minimal cost. The dev container provides all necessary tools:
-
-- **Terraform** - Infrastructure provisioning
-- **AWS CLI** - AWS operations
-- **kubectl** - Kubernetes management
-
-Kubeconfig is fetched to `~/.kube/config` (kubectl default path).
+This is a disposable K3s cluster on AWS with minimal cost. Kubeconfig is fetched to `~/.kube/config` (kubectl default path).
 
 ## Project Structure
 
@@ -120,6 +108,24 @@ The cluster uses Elastic IPs, so instance types can be changed dynamically:
 3. K3s certificates remain valid because the Elastic IP doesn't change
 
 **Note:** Changing instance types triggers instance replacement (destroy + create), not in-place modification.
+
+### ALWAYS verify regional availability before committing to an instance type
+
+Before editing `terraform.tfvars` with a new instance type, confirm it is offered in the target region/AZ:
+
+```bash
+aws ec2 describe-instance-type-offerings \
+  --location-type availability-zone \
+  --filters "Name=instance-type,Values=<type>" \
+  --region <region> \
+  --query 'InstanceTypeOfferings[*].[InstanceType,Location]' --output table
+```
+
+**`run-instances --dry-run` is NOT sufficient** — it validates request syntax and IAM permissions only, not whether the instance type exists in the region. A dry-run can succeed for an instance type AWS doesn't offer in that region, and the real apply will then fail with `Unsupported: The requested configuration is currently not supported`.
+
+Also remember: offerings ≠ capacity. An offered type can still return `InsufficientInstanceCapacity` at apply time. If the first-choice type is offered but capacity-constrained, have a fallback ready (newer generation in the same family is usually the best bet, e.g. c7i instead of c6i).
+
+Past incident: committed to `c6a.8xlarge` based on a misread dry-run; `c6a` is not offered in `ap-east-2` at all, causing a failed apply + state-unlock + retry cycle. One `describe-instance-type-offerings` call up front would have prevented it.
 
 ## Important Notes
 
