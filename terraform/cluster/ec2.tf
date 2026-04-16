@@ -291,13 +291,22 @@ EOF
   # Template function for worker userdata. Each worker can carry:
   #   - label: used as `role=<label>`; defaults to worker key
   #   - taint: optional `key=value:Effect` string, applied via --node-taint
+  #
+  # k3s-agent install runs under a systemd oneshot unit (not inline) so that:
+  #   - network-online.target is waited on before dnf/curl (fixes #5 silent
+  #     exit from network-not-ready + set -e)
+  #   - Restart=on-failure retries transient errors
+  #   - failures surface via `systemctl status k3s-agent-bootstrap` and
+  #     `journalctl -u k3s-agent-bootstrap` instead of vanishing
+  #     mid-cloud-init
   k3s_agent_userdata = { for name, cfg in var.workers : name => <<-EOF
 #!/bin/bash
-set -e
+set -euo pipefail
 
-dnf install -y jq cronie
-systemctl enable --now crond
-systemctl disable --now firewalld || true
+SERVER_IP="${aws_instance.master.private_ip}"
+ROLE="${coalesce(cfg.label, name)}"
+TOKEN="${random_password.k3s_token.result}"
+TAINT_ARG="${cfg.taint != null ? cfg.taint : ""}"
 
 mkdir -p /etc/rancher/k3s
 cat > /etc/rancher/k3s/registries.yaml << 'REGISTRIES'
@@ -310,18 +319,69 @@ mirrors:
       - "http://localhost:30500"
 REGISTRIES
 
-SERVER_IP="${aws_instance.master.private_ip}"
-until curl -sk "https://$SERVER_IP:6443" >/dev/null 2>&1; do
-  echo "Waiting for K3s server..."
+cat > /usr/local/bin/install-k3s-agent.sh << SCRIPT
+#!/bin/bash
+set -euo pipefail
+exec > >(tee -a /var/log/k3s-bootstrap.log) 2>&1
+trap 'echo "FAIL at line \$LINENO (exit \$?)"' ERR
+
+echo "=== k3s-agent bootstrap starting \$(date) ==="
+
+dnf install -y jq cronie
+systemctl enable --now crond
+systemctl disable --now firewalld || true
+
+# Bounded wait for master API (cap ~10 min)
+for i in \$(seq 1 60); do
+  if curl -sk --max-time 5 "https://$SERVER_IP:6443" >/dev/null 2>&1; then
+    echo "Master API reachable after \$((i*10))s"
+    break
+  fi
+  echo "[\$i/60] Waiting for K3s server at $SERVER_IP..."
   sleep 10
 done
+curl -sk --max-time 5 "https://$SERVER_IP:6443" >/dev/null
 
-curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - \
-  --server "https://$SERVER_IP:6443" \
-  --token "${random_password.k3s_token.result}" \
-  --node-label "role=${coalesce(cfg.label, name)}"${cfg.taint != null ? " \\\n  --node-taint \"${cfg.taint}\"" : ""}
+INSTALL_ARGS=(
+  --server "https://$SERVER_IP:6443"
+  --token "$TOKEN"
+  --node-label "role=$ROLE"
+)
+if [ -n "$TAINT_ARG" ]; then
+  INSTALL_ARGS+=(--node-taint "$TAINT_ARG")
+fi
 
-echo "K3s agent (${name}) ready"
+curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="agent" sh -s - "\$${INSTALL_ARGS[@]}"
+
+echo "=== k3s-agent (${name}) ready \$(date) ==="
+SCRIPT
+chmod +x /usr/local/bin/install-k3s-agent.sh
+
+cat > /etc/systemd/system/k3s-agent-bootstrap.service << 'UNIT'
+[Unit]
+Description=One-shot k3s-agent install (idempotent)
+After=network-online.target cloud-final.service
+Wants=network-online.target
+ConditionPathExists=!/var/lib/rancher/k3s/agent/kubelet.kubeconfig
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/install-k3s-agent.sh
+Restart=on-failure
+RestartSec=15
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now k3s-agent-bootstrap.service
+
+echo "K3s agent (${name}) bootstrap unit enabled; follow /var/log/k3s-bootstrap.log or journalctl -u k3s-agent-bootstrap"
 EOF
   }
 }
