@@ -97,6 +97,7 @@ resource "aws_cloudwatch_event_rule" "check_schedule" {
   name                = "kube-sandbox-check-schedule"
   description         = "Trigger cluster idle check"
   schedule_expression = "rate(${var.check_interval_minutes} minutes)"
+  state               = "ENABLED"
 }
 
 resource "aws_cloudwatch_event_target" "check_lambda" {
