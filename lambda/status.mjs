@@ -154,7 +154,13 @@ async function checkActivity(now, createdAt) {
       Statistics: ['Sum']
     }));
 
-    const datapoints = response.Datapoints || [];
+    const allDatapoints = response.Datapoints || [];
+    // Drop datapoints from before this cluster was created — CloudWatch retains
+    // metrics across cluster rebuilds and a stale point from a prior cluster
+    // would otherwise be treated as current activity (issue #4).
+    const datapoints = createdAt
+      ? allDatapoints.filter(dp => dp.Timestamp >= createdAt)
+      : allDatapoints;
 
     if (datapoints.length === 0) {
       if (createdAt) {
