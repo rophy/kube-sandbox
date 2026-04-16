@@ -335,6 +335,12 @@ resource "aws_instance" "master" {
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
 
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    instance_metadata_tags      = "enabled"
+  }
+
   user_data = local.k3s_server_userdata
 
   dynamic "instance_market_options" {
@@ -368,6 +374,12 @@ resource "aws_instance" "worker" {
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    instance_metadata_tags      = "enabled"
+  }
 
   user_data = local.k3s_agent_userdata[each.key]
 
