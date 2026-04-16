@@ -65,10 +65,6 @@ resource "aws_lambda_function" "check" {
     })
   }
 
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
-  }
-
   tags = {
     Name = "kube-sandbox-check"
   }
@@ -89,10 +85,6 @@ resource "aws_lambda_function" "status" {
 
   environment {
     variables = local.status_env
-  }
-
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
   }
 
   tags = {
