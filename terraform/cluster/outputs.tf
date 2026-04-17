@@ -38,8 +38,18 @@ output "kubeconfig_command" {
 }
 
 output "availability_zone" {
-  description = "Availability zone used"
+  description = "Primary AZ (master's AZ; default for workers without an explicit `az`)"
   value       = local.az
+}
+
+output "availability_zones" {
+  description = "All AZs with subnets in this VPC"
+  value       = local.azs
+}
+
+output "subnet_ids" {
+  description = "Subnet IDs keyed by AZ"
+  value       = { for az, sn in aws_subnet.public : az => sn.id }
 }
 
 output "vpc_id" {

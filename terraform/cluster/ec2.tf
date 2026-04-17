@@ -360,7 +360,7 @@ chmod +x /usr/local/bin/install-k3s-agent.sh
 cat > /etc/systemd/system/k3s-agent-bootstrap.service << 'UNIT'
 [Unit]
 Description=One-shot k3s-agent install (idempotent)
-After=network-online.target cloud-final.service
+After=network-online.target
 Wants=network-online.target
 ConditionPathExists=!/var/lib/rancher/k3s/agent/kubelet.kubeconfig
 
@@ -390,7 +390,7 @@ EOF
 resource "aws_instance" "master" {
   ami                    = data.aws_ami.al2023.id
   instance_type          = var.master_instance_type
-  subnet_id              = aws_subnet.public.id
+  subnet_id              = aws_subnet.public[local.az].id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
@@ -430,7 +430,7 @@ resource "aws_instance" "worker" {
   for_each               = var.workers
   ami                    = data.aws_ami.al2023.id
   instance_type          = each.value.instance_type
-  subnet_id              = aws_subnet.public.id
+  subnet_id              = aws_subnet.public[coalesce(each.value.az, local.az)].id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name
   key_name               = aws_key_pair.main.key_name
