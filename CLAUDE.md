@@ -39,6 +39,8 @@ This will:
 1. Run `terraform destroy` to remove all AWS resources
 2. Clean up any orphaned EBS volumes created by the K8s CSI driver
 
+**ALWAYS use `make down`, NEVER raw `terraform destroy`.** The K8s CSI driver creates EBS volumes outside of terraform state. `terraform destroy` leaves them orphaned until manually deleted.
+
 ## EBS CSI Driver
 
 The cluster uses AWS EBS CSI driver for dynamic volume provisioning. This allows PVCs to automatically create EBS volumes.
