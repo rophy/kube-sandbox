@@ -1,4 +1,5 @@
 .env
+.envrc
 *.tfstate
 *.tfstate.*
 .terraform/
@@ -11,3 +12,4 @@ kubeconfig.yaml
 lambda/**/*.zip
 .build/
 *.plan
+authorized.txt
