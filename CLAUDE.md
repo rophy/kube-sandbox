@@ -4,6 +4,8 @@ Required tools: `terraform`, `aws` CLI, `kubectl`, `docker`, `gh`.
 
 This is a disposable K3s cluster on AWS with minimal cost. Kubeconfig is fetched to `~/.kube/config`.
 
+**kubectl context:** `kube-sandbox`. Always use `--context=kube-sandbox` when running kubectl.
+
 ## Project Structure
 
 - `terraform/` - Infrastructure as Code for AWS EC2 + K3s
@@ -118,6 +120,7 @@ Past incident: committed to `c6a.8xlarge` based on a misread dry-run; `c6a` is n
 - On-demand instances are used by default
 - The cluster is ephemeral - destroy when done to avoid charges
 - EBS volumes created by CSI driver are automatically cleaned up by `make down`
+- Run `terraform plan/apply/destroy` in the background, then check progress periodically. These commands can take minutes and should not block the conversation.
 
 ## Channel Messages
 
