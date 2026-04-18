@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "ap-east-2"
+  default     = "ap-southeast-1"
 }
 
 variable "lambda_tf_image_uri" {
