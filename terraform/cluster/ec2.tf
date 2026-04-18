@@ -386,10 +386,19 @@ EOF
   }
 }
 
+locals {
+  master_instance_type = (
+    var.master_instance_type != "" ? var.master_instance_type :
+    length(var.workers) <= 5  ? "t3.small" :
+    length(var.workers) <= 20 ? "t3.medium" :
+    "t3.xlarge"
+  )
+}
+
 # Master Node - K3s Server
 resource "aws_instance" "master" {
   ami                    = data.aws_ami.al2023.id
-  instance_type          = var.master_instance_type
+  instance_type          = local.master_instance_type
   subnet_id              = aws_subnet.public[local.az].id
   vpc_security_group_ids = [aws_security_group.k3s.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2.name

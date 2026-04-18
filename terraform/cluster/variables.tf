@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "ap-east-2"
+  default     = "ap-southeast-1"
 }
 
 variable "availability_zone" {
@@ -23,9 +23,9 @@ variable "vpc_cidr" {
 }
 
 variable "master_instance_type" {
-  description = "Instance type for master node (K3s server)"
+  description = "Instance type for master node. Leave empty to auto-select based on worker count: ≤5 → t3.small, ≤20 → t3.medium, >20 → t3.xlarge."
   type        = string
-  default     = "t3.small"
+  default     = ""
 }
 
 variable "workers" {
