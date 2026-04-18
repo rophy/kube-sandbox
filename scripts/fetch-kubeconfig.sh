@@ -50,35 +50,48 @@ if [ "$API_READY" != "true" ]; then
     exit 1
 fi
 
-# Fetch kubeconfig via SSH
+# Fetch kubeconfig via SSH into a temp file
+TEMP_KUBECONFIG=$(mktemp)
 echo "Fetching kubeconfig via SSH..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-    ec2-user@"$MASTER_IP" "cat /tmp/kubeconfig-external.yaml" > "$OUTPUT_FILE"
+    ec2-user@"$MASTER_IP" "cat /tmp/kubeconfig-external.yaml" > "$TEMP_KUBECONFIG"
 
-if [ -s "$OUTPUT_FILE" ]; then
-    # Fix file permissions to avoid kubectl warnings
-    chmod 600 "$OUTPUT_FILE"
-
-    # Fix empty server IP in kubeconfig
-    if grep -q "server: https://:16443" "$OUTPUT_FILE"; then
-        echo "Fixing server IP in kubeconfig..."
-        sed -i "s|server: https://:16443|server: https://${MASTER_IP}:16443|" "$OUTPUT_FILE"
-    fi
-
-    # Rename context/cluster/user from "default" to "kube-sandbox"
-    sed -i 's/: default$/: kube-sandbox/g' "$OUTPUT_FILE"
-    sed -i 's/name: default$/name: kube-sandbox/g' "$OUTPUT_FILE"
-
-    # Verify kubeconfig has correct server URL
-    SERVER_URL=$(grep "server:" "$OUTPUT_FILE" | awk '{print $2}')
-    echo ""
-    echo "Kubeconfig saved to: $OUTPUT_FILE"
-    echo "Server URL: $SERVER_URL"
-    echo "Context: kube-sandbox"
-    echo ""
-    echo "kubectl is now ready to use:"
-    echo "  kubectl get nodes"
-else
+if [ ! -s "$TEMP_KUBECONFIG" ]; then
     echo "ERROR: Failed to fetch kubeconfig"
+    rm -f "$TEMP_KUBECONFIG"
     exit 1
 fi
+
+# Fix empty server IP in kubeconfig
+if grep -q "server: https://:16443" "$TEMP_KUBECONFIG"; then
+    echo "Fixing server IP in kubeconfig..."
+    sed -i "s|server: https://:16443|server: https://${MASTER_IP}:16443|" "$TEMP_KUBECONFIG"
+fi
+
+# Rename context/cluster/user from "default" to "kube-sandbox"
+sed -i 's/: default$/: kube-sandbox/g' "$TEMP_KUBECONFIG"
+sed -i 's/name: default$/name: kube-sandbox/g' "$TEMP_KUBECONFIG"
+
+# Merge into existing ~/.kube/config without clobbering other contexts
+if [ -f "$OUTPUT_FILE" ]; then
+    MERGED=$(mktemp)
+    KUBECONFIG="${TEMP_KUBECONFIG}:${OUTPUT_FILE}" kubectl config view --flatten > "$MERGED"
+    chmod 600 "$MERGED"
+    mv "$MERGED" "$OUTPUT_FILE"
+else
+    chmod 600 "$TEMP_KUBECONFIG"
+    mv "$TEMP_KUBECONFIG" "$OUTPUT_FILE"
+fi
+rm -f "$TEMP_KUBECONFIG"
+
+# Set kube-sandbox as the current context
+kubectl config use-context kube-sandbox
+
+SERVER_URL=$(kubectl config view -o jsonpath='{.clusters[?(@.name=="kube-sandbox")].cluster.server}')
+echo ""
+echo "Kubeconfig merged into: $OUTPUT_FILE"
+echo "Server URL: $SERVER_URL"
+echo "Context: kube-sandbox (active)"
+echo ""
+echo "kubectl is now ready to use:"
+echo "  kubectl get nodes"
